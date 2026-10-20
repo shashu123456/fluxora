@@ -1,0 +1,385 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 42 55% 96%;
+    --foreground: 38 30% 14%;
+    --card: 40 40% 99%;
+    --card-foreground: 38 30% 14%;
+    --popover: 40 40% 99%;
+    --popover-foreground: 38 30% 14%;
+    --primary: 36 55% 44%;
+    --primary-foreground: 42 80% 96%;
+    --secondary: 40 30% 91%;
+    --secondary-foreground: 38 30% 16%;
+    --muted: 40 30% 91%;
+    --muted-foreground: 38 12% 44%;
+    --accent: 40 34% 90%;
+    --accent-foreground: 38 30% 16%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 38 24% 86%;
+    --input: 38 24% 86%;
+    --ring: 36 55% 50%;
+    --radius: 0.85rem;
+    --sidebar: 40 36% 95%;
+    --sidebar-accent: 38 30% 88%;
+    --sidebar-foreground: 38 30% 16%;
+    --sidebar-border: 38 24% 85%;
+
+    /* Fluxora champagne palette */
+    --fx-gold: 40 56% 62%;
+    --fx-gold-bright: 42 72% 76%;
+    --fx-gold-deep: 36 45% 42%;
+    --fx-champagne: 40 72% 82%;
+    --fx-glow: 40 60% 56%;
+  }
+
+  .dark {
+    --background: 228 26% 4%;
+    --foreground: 40 18% 92%;
+    --card: 227 28% 6%;
+    --card-foreground: 40 18% 92%;
+    --popover: 227 32% 7%;
+    --popover-foreground: 40 18% 92%;
+    --primary: 40 56% 56%;
+    --primary-foreground: 38 32% 8%;
+    --secondary: 227 24% 10%;
+    --secondary-foreground: 40 18% 92%;
+    --muted: 227 24% 10%;
+    --muted-foreground: 40 12% 62%;
+    --accent: 227 26% 12%;
+    --accent-foreground: 40 18% 94%;
+    --destructive: 0 68% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 18% 18%;
+    --input: 40 18% 18%;
+    --ring: 40 56% 58%;
+    --sidebar: 228 33% 4%;
+    --sidebar-accent: 40 22% 12%;
+    --sidebar-foreground: 40 18% 94%;
+    --sidebar-border: 40 16% 13%;
+
+    /* Fluxora champagne palette */
+    --fx-gold: 40 60% 62%;
+    --fx-gold-bright: 42 72% 76%;
+    --fx-gold-deep: 36 48% 50%;
+    --fx-champagne: 40 70% 84%;
+    --fx-glow: 40 62% 58%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Manrope", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'ss01' 1, 'cv05' 1;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: "Sora", "Manrope", ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: hsl(var(--fx-gold) / 0.32);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--fx-gold) / 0.38);
+  }
+
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+@layer components {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* FLUXORA wordmark lockup — Sora display, champagne gradient */
+  .fx-wordmark {
+    font-family: "Sora", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    background: linear-gradient(105deg, #f8ecd0 0%, #d9bd84 34%, #a8833f 58%, #e7cf98 80%, #f4e3b8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Layered premium surface */
+  .fx-surface {
+    position: relative;
+    background:
+      linear-gradient(180deg, hsl(40 30% 10% / 0.55), hsl(228 28% 5% / 0.92)),
+      hsl(var(--card));
+    border: 1px solid hsl(40 30% 24% / 0.35);
+    border-radius: var(--radius);
+    box-shadow:
+      0 1px 0 hsl(40 80% 90% / 0.05) inset,
+      0 10px 30px -14px hsl(228 60% 0% / 0.6),
+      0 2px 8px -4px hsl(228 60% 0% / 0.4);
+  }
+
+  .fx-glass {
+    background: hsl(228 30% 8% / 0.66);
+    backdrop-filter: blur(20px) saturate(1.35);
+    -webkit-backdrop-filter: blur(20px) saturate(1.35);
+    border: 1px solid hsl(40 40% 70% / 0.14);
+  }
+
+  /* Champagne gradient text */
+  .fx-gradient-text {
+    background: linear-gradient(105deg, hsl(var(--fx-champagne)), hsl(var(--fx-gold)) 48%, hsl(var(--fx-gold-deep)) 72%, hsl(var(--fx-gold-bright)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Brand glow under accent surfaces */
+  .fx-glow {
+    box-shadow:
+      0 4px 22px -6px hsl(var(--fx-glow) / 0.55),
+      0 1px 4px -2px hsl(var(--fx-glow) / 0.4);
+  }
+
+  .fx-glow-soft {
+    box-shadow: 0 2px 18px -6px hsl(var(--fx-glow) / 0.45);
+  }
+
+  /* Ambient champagne aurora page background */
+  .fx-aurora {
+    background:
+      radial-gradient(900px 520px at 82% -8%, hsl(var(--fx-gold) / 0.11), transparent 62%),
+      radial-gradient(760px 460px at 12% -10%, hsl(var(--fx-champagne) / 0.09), transparent 60%),
+      radial-gradient(640px 420px at 50% 108%, hsl(var(--fx-gold-deep) / 0.08), transparent 60%),
+      hsl(var(--background));
+  }
+
+  /* Gold hairlines */
+  .fx-divider-gradient {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--fx-gold) / 0.45), hsl(var(--fx-champagne) / 0.35), transparent);
+  }
+
+  /* Gold gradient border frame */
+  .fx-border-gradient {
+    position: relative;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+      linear-gradient(140deg, hsl(var(--fx-champagne) / 0.85), hsl(var(--fx-gold) / 0.8) 45%, hsl(var(--fx-gold-deep) / 0.7) 80%, hsl(var(--fx-champagne) / 0.5)) border-box;
+  }
+
+  /* Brand-styled markdown */
+  .prose {
+    --tw-prose-body: hsl(var(--foreground));
+    --tw-prose-headings: hsl(var(--foreground));
+    --tw-prose-links: hsl(var(--fx-gold-bright));
+    --tw-prose-bold: hsl(var(--foreground));
+    --tw-prose-counters: hsl(var(--muted-foreground));
+    --tw-prose-bullets: hsl(var(--muted-foreground));
+    --tw-prose-quotes: hsl(var(--muted-foreground));
+    --tw-prose-code: hsl(var(--fx-gold-bright));
+    --tw-prose-pre-bg: hsl(228 30% 4% / 0.7);
+  }
+
+  .prose pre {
+    background: hsl(228 30% 4% / 0.72);
+    border: 1px solid hsl(40 30% 22% / 0.4);
+    border-radius: 0.7rem;
+    box-shadow: 0 8px 24px -16px hsl(228 60% 0% / 0.6) inset, 0 1px 0 hsl(40 80% 90% / 0.04) inset;
+  }
+
+  .prose code {
+    background: hsl(var(--muted));
+    border: 1px solid hsl(40 30% 20% / 0.45);
+    border-radius: 6px;
+    padding: 2px 5px;
+    font-size: 0.875em;
+  }
+
+  .prose pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+
+  .prose blockquote {
+    border-left-color: hsl(var(--fx-gold) / 0.5);
+    font-style: italic;
+  }
+
+  .prose table {
+    font-size: 0.9em;
+  }
+
+  .prose :not(pre) > code::before,
+  .prose :not(pre) > code::after {
+    content: "";
+  }
+}
+
+mark {
+  background: hsl(var(--fx-gold) / 0.3);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+}
+
+.cm-editor {
+  outline: none !important;
+}
+
+.diff-add {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.diff-del {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* ------------------------------------------------------------------ */
+/* FX Premium utilities (Part 7 — Professional UI)                     */
+/* ------------------------------------------------------------------ */
+
+.fx-card {
+  border-radius: 0.875rem;
+  border: 1px solid hsl(var(--border) / 0.7);
+  background: hsl(var(--card));
+  box-shadow:
+    0 1px 2px hsl(var(--foreground) / 0.04),
+    0 8px 24px -16px hsl(var(--foreground) / 0.25);
+}
+
+.fx-hover-lift {
+  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.fx-hover-lift:hover {
+  transform: translateY(-1px);
+  border-color: hsl(var(--fx-gold) / 0.28);
+  box-shadow: 0 10px 28px -14px hsl(var(--fx-gold) / 0.18);
+}
+
+.fx-focus-gold:focus-within {
+  border-color: hsl(var(--fx-gold) / 0.45);
+  box-shadow: 0 0 0 3px hsl(var(--fx-gold) / 0.16);
+}
+
+.fx-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.675rem;
+  font-size: 0.8125rem;
+  color: hsl(var(--muted-foreground));
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.fx-nav-item:hover {
+  color: hsl(var(--sidebar-foreground));
+  background: hsl(var(--sidebar-accent) / 0.6);
+}
+
+.fx-nav-item[data-active='true'] {
+  color: hsl(var(--sidebar-foreground));
+  background: linear-gradient(90deg, hsl(var(--fx-gold) / 0.13), hsl(var(--fx-gold) / 0.04));
+  font-weight: 500;
+  box-shadow: inset 2.5px 0 0 hsl(var(--fx-gold) / 0.9);
+}
+
+.fx-nav-item[data-active='true']:after {
+  content: '';
+  position: absolute;
+  right: 0.5rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: hsl(var(--fx-gold));
+  opacity: 0.9;
+  box-shadow: 0 0 6px hsl(var(--fx-gold) / 0.7);
+}
+
+.fx-caption {
+  padding: 0.55rem 0.75rem 0.3rem;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground) / 0.7);
+}
+
+.fx-message-enter {
+  animation: fade-in 0.22s ease-out both;
+}
+
+.fx-msg-bubble-assistant {
+  border: 1px solid hsl(var(--border) / 0.35);
+  background: hsl(var(--card) / 0.55);
+}
+
+.fx-composer-surface {
+  background: linear-gradient(180deg, hsl(var(--card) / 0.92), hsl(var(--card) / 0.82));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid hsl(var(--border) / 0.55);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fx-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
