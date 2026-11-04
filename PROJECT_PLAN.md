@@ -180,27 +180,37 @@ Acceptance:
 - Local equivalent commands pass.
 - Document that CI execution requires a remote and will be verified by the user/next agent.
 
-### Phase 4 — Packaging
+### Phase 4 — Packaging (DONE — unsigned, signing BLOCKED)
 
-Tasks:
+**Result:** Complete. `npm run electron:build` produces `Fluxora-Setup-1.0.0.exe`
+(104.9 MiB) and `Fluxora-Portable-1.0.0.exe` (104.7 MiB). Two real defects were
+found by inspecting a `--dir` package before the release build and then fixed:
 
-1. Clean stale artifacts (`dist/`, `dist-electron/`, `release/`, `*.tsbuildinfo`).
-2. Fix `electron-builder.json`:
-   - Verify appId/productName/metadata.
-   - Enable native rebuild (remove `npmRebuild: false` or add explicit rebuild step).
-   - Verify `asarUnpack` for native modules (`sqlite3`, `sharp` if used at runtime).
-   - Remove stale debug artifacts from `files`.
-   - Verify icons and NSIS + portable targets.
-3. Build Windows installer + portable.
-4. Verify installer artifact exists, size is sane, and metadata/version are correct.
-5. Code signing cannot be completed without a certificate. Document as blocked, not done.
+1. `node_sqlite3.node` was inside `app.asar`, so the packaged app could not load
+   its database driver. Fixed with `asarUnpack: ["node_modules/sqlite3/**"]`.
+2. `Fluxora.exe` carried Electron identity (`ProductName=Electron`,
+   `CompanyName=GitHub, Inc.`) because `signAndEditExecutable: false` disabled
+   rcedit. Fixed by setting it to `true`; this stamps version resources and the
+   icon and performs no signing without a certificate.
 
-Acceptance:
+`npmRebuild: false` was retained deliberately: `sqlite3` 5.1.7 is an N-API addon,
+so no Electron ABI rebuild is required. The packaged app created a 15-table
+database on first launch, which proves the addon loads.
 
-- `npm run electron:build` produces installer + portable.
-- No stale `groq-debug.js` in package.
-- Artifact metadata verified.
-- Signing status explicitly reported.
+Build prerequisite discovered: electron-builder's `winCodeSign` archive contains
+macOS symlinks that 7-Zip cannot create without Developer Mode or elevation. The
+build needs Developer Mode, an elevated first build, or a pre-seeded Windows-only
+cache. See `docs/RELEASE_GATE_EVIDENCE.md` for the exact command.
+
+Signing is **BLOCKED**: no certificate exists, all artifacts report `NotSigned`.
+
+Acceptance (met):
+
+- [x] `npm run electron:build` produces installer + portable.
+- [x] No stale `groq-debug.js` in package.
+- [x] Artifact metadata, version and icon verified.
+- [x] Native sqlite3 packaged and proven loadable at runtime.
+- [x] Signing status explicitly reported.
 
 ### Phase 5 — Clean-machine validation
 
@@ -306,7 +316,7 @@ Phase 2 DB green
   → Phase 10 Final report
 ```
 
-Phases 2 and 3 are complete. Packaging is next. Do not start platform programs.
+Phases 2, 3 and 4 are complete. Phase 5 (clean-machine validation) is next; packaging is verified and must not be redone. Do not start platform programs.
 
 ---
 
@@ -316,8 +326,11 @@ Phases 2 and 3 are complete. Packaging is next. Do not start platform programs.
 |---|---|---|---|
 | Database suite | P0 | Fixed | Production `sqlite3` harness; 297/297 pass |
 | CI | P0 | PASS | GitHub Actions run 41855224190 |
-| Windows installer unverified | P0 | Next | Phase 4 |
-| No code signing certificate | Blocker | External | Document only |
+| Windows installer unverified | P0 | Fixed | Phase 4 PASS; installer + portable verified, app launches with 15-table DB |
+| No code signing certificate | Blocker | External | All artifacts `NotSigned`; documented, never faked |
+| winCodeSign cache needs symlink privilege | Medium | Mitigation | Developer Mode, elevated first build, or pre-seeded Windows-only cache |
+| Package size ~105 MiB; ships `node-gyp`, `node-pre-gyp`, unused `sharp` | Low | Deferred | Phase 9/10 trimming |
+| Portable build stores data in `userData` (portable root not detected) | Medium | Deferred | Product behavior, out of Phase 4 scope |
 | No clean-machine test | High | Environmental | Document procedure; local smoke where possible |
 | `electron:dev` lacks `VITE_DEV_SERVER_URL` | High | Pending | Use built renderer + `start`, or fix script |
 | Terminal approvals in memory / 8h sessions | Medium | Accepted | C1 not in scope |
@@ -367,7 +380,7 @@ npm run electron:build
 
 ### Continue here
 
-**Immediate next task:** Phase 4 — Windows packaging. Clean stale build output, inspect `electron-builder.json`, verify native `sqlite3` packaging and `asarUnpack`, build installer + portable, inspect artifacts, and document signing as blocked/unsigned. First verify the Phase 3 CI run passes on GitHub after the next push.
+**Immediate next task:** Phase 5 — clean-machine validation. Write a repeatable install/launch/feature procedure for a fresh Windows VM or clean profile, run the parts that are possible locally, and mark every untested step `NOT VERIFIED`. Use the verified artifacts in `release/` (see `docs/RELEASE_GATE_EVIDENCE.md`). Do not redo packaging; it is green and unsigned by design.
 
 Do not start platform programs.
 
@@ -401,7 +414,8 @@ Do not start platform programs.
 | 2026-11-04 | Agent efficiency guidance + start prompt | Complete; see Sections 13–14 and `docs/AGENT_START_PROMPT.md` |
 | 2026-11-04 | Phase 2 database harness | Complete; production `sqlite3`, 297/297 pass, tsc/build pass |
 | 2026-11-04 | Phase 3 CI | PASS; GitHub Actions run 41855224190 (2m 6s) |
-| Next | Phase 4 Windows packaging | Pending |
+| 2026-11-04 | Phase 4 Windows packaging | PASS (unsigned); installer 104.9 MiB + portable 104.7 MiB; sqlite3 unpacked and loadable; signing BLOCKED |
+| Next | Phase 5 Clean-machine validation | Pending |
 
 ---
 

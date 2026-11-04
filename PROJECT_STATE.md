@@ -94,7 +94,7 @@ Project Helios is complete and validated. Fluxora learns locally from everyday u
 
 C1 — Trusted Data & Secret Boundary is complete. RC-1 (filesystem containment), RC-2 (terminal execution), and C1 (secret boundary + backup/restore integrity + lifecycle safety) are done. There is no reversible/plaintext key fallback; provider secrets live behind one main-process boundary; backups are integrity-checked, secret-free snapshots; imports are validated and metadata-only for credentials; and the app enforces a single instance with awaited database lifecycle.
 
-Fluxora is still **not release-ready**. The database harness is green, the full suite passes, and CI is configured. The next blocker is Windows packaging and clean-machine validation. See `PROJECT_PLAN.md` for the authoritative Release Gate V1 task board, handoff rules, and exact continuation point. `docs/PRODUCT_REVIEW.md` and `docs/PRODUCT_ROADMAP.md` remain the evidence and prioritization sources.
+Fluxora is still **not release-ready**. The database harness is green, the full suite passes, CI is configured, and Windows packaging now produces verified unsigned installer and portable artifacts. The next blocker is clean-machine validation. See `PROJECT_PLAN.md` for the authoritative Release Gate V1 task board, handoff rules, and exact continuation point. `docs/PRODUCT_REVIEW.md` and `docs/PRODUCT_ROADMAP.md` remain the evidence and prioritization sources.
 
 ## Current Todo
 
@@ -107,12 +107,11 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - [✓] Master release plan and agent handoff created in `PROJECT_PLAN.md`.
 - [✓] Release Gate V1 Phase 2 — production `sqlite3` test harness; full suite 297/297.
 - [✓] Release Gate V1 Phase 3 — CI workflow authored; GitHub Actions run `41855224190` passed.
-- [→] Release Gate V1 Phase 4 — Windows installer + portable packaging, native rebuild, artifact inspection, signing status.
+- [✓] Release Gate V1 Phase 4 — Windows installer + portable built; native sqlite3 unpacked and proven loadable in the packaged app; metadata/icon verified; signing documented as BLOCKED.
 
 ## Next Todo
 
-- [ ] Phase 4 — Windows installer + portable packaging, native rebuild, artifact inspection, signing status.
-- [ ] Phase 5 — clean-machine validation procedure and local smoke test.
+- [→] Phase 5 — clean-machine validation procedure and local smoke test.
 - [ ] Phase 6 — crash-recovery audit.
 - [ ] Phase 7 — measured performance report.
 - [ ] Phase 8 — security re-audit.
@@ -122,7 +121,10 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 
 ## Known Issues
 
-- Critical: Windows release is unsigned (`signAndEditExecutable:false`), native ABI is unverified (`npmRebuild:false`), and stale `dist-electron/electron/groq-debug.js` ships.
+- Critical: Windows release is unsigned — no code signing certificate exists; installer, portable and app exe all report `NotSigned`. Documented as BLOCKED, not faked.
+- Build prerequisite: `electron-builder` must unpack its `winCodeSign` cache, which fails without symlink privilege. Developer Mode, an elevated first build, or a pre-seeded cache (Windows-only extraction) is required. Recorded in `docs/RELEASE_GATE_EVIDENCE.md`.
+- Packaging residual: the package is ~105 MiB per artifact and still ships transitive build/test scaffolding (`node-gyp`, `node-pre-gyp`, `sqlite3/deps`), plus an unused `sharp` dependency. Size reduction deferred to Phase 9/10.
+- Packaging residual: portable mode stores data in `userData` because `electron/config.ts` only detects a portable root next to the exe for the legacy `AI Workspace.exe`/`data` layout.
 - Secrets residual: backups and exports intentionally omit credential values, so restoring on a new machine requires re-entering provider keys; the local fallback vault key is machine-bound.
 - Terminal residual: approvals are held in memory, session approval lasts 8 hours, and the native process-tree kill/hard-link race is not covered by an automated integration test.
 - Filesystem residual: canonical validation is check-then-use, so a local race or hard link can still redirect a write; workspace roots are canonicalized but missing/non-directory legacy roots are tolerated; root replacement is not locked.
@@ -144,5 +146,9 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - Tests (C1 targeted): PASS — dataTransferValidation 13 + secretBoundary 11 (24 tests)
 - Tests (combined trust suite): PASS — terminalSecurity 17 + securityPolicy 29 + dataTransfer 13 + secretBoundary 11 (70 tests)
 - Tests (full suite): PASS — 297 tests across 17 files, including production-database coverage
-- CI: PASS — GitHub Actions run `41855224190` (Windows, Node 20; 2m 6s)
-- Windows release: NOT VERIFIED — installers built with signing disabled and `npmRebuild:false`; clean-machine smoke test required
+- CI: PASS — GitHub Actions run `41855922082` (Windows, Node 20; 1m 13s)
+- Windows packaging: PASS (unsigned) — `Fluxora-Setup-1.0.0.exe` 104.9 MiB and `Fluxora-Portable-1.0.0.exe` 104.7 MiB; ProductName `Fluxora`, version `1.0.0`, icon matches `build/icon.ico`
+- Native sqlite3 in package: PASS — `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes); packaged app created a 15-table database on first launch
+- Packaged app launch: PASS — unpacked and portable binaries both start with a fresh `--user-data-dir`; real user data untouched
+- Code signing: BLOCKED — no certificate; all artifacts `NotSigned`
+- Windows release: NOT VERIFIED on a clean machine — install/uninstall and first-run onboarding belong to Phase 5
