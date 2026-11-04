@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { usePromptStore } from '@/stores/promptStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { PromptTemplate, PromptVariable } from '@/types'
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -20,7 +21,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, truncate, copyToClipboard } from '@/lib/utils'
 import {
-  Plus, Search, Star, Copy, Pencil, Trash2, MoreVertical, FileText, Loader2, Send,
+  Plus, Search, Star, Copy, Pencil, Trash2, MoreVertical, FileText, Loader2, Send, Library,
 } from 'lucide-react'
 
 interface PromptFormState {
@@ -246,6 +247,14 @@ function UseDialog({
   const handleSendToChat = () => {
     if (!prompt) return
     const filled = fillTemplate(prompt.content, values)
+    try {
+      void window.api?.developer?.track('prompt_used', {
+        key: prompt.category || 'general',
+        value: prompt.name,
+      })
+    } catch {
+      /* tracking is best-effort */
+    }
     useUIStore.getState().setPendingPromptContent(filled)
     useUIStore.getState().setActiveTab('chat')
     onOpenChange(false)
@@ -382,6 +391,16 @@ export function PromptsView() {
     loadPrompts()
   }, [])
 
+  const pendingCreate = useUIStore((s) => s.pendingCreate)
+  const setPendingCreate = useUIStore((s) => s.setPendingCreate)
+
+  useEffect(() => {
+    if (pendingCreate === 'prompt') {
+      setPendingCreate(null)
+      setCreateOpen(true)
+    }
+  }, [pendingCreate, setPendingCreate])
+
   const handleCopy = useCallback((prompt: PromptTemplate) => {
     copyToClipboard(prompt.content)
     setCopiedId(prompt.id)
@@ -408,8 +427,13 @@ export function PromptsView() {
     setEditTarget(null)
   }, [editTarget, updatePrompt])
 
-  const pinnedPrompts = filteredPrompts.filter((p) => p.pinned)
-  const unpinnedPrompts = filteredPrompts.filter((p) => !p.pinned)
+  const pinnedPrompts = useMemo(() => filteredPrompts.filter((p) => p.pinned), [filteredPrompts])
+  const unpinnedPrompts = useMemo(() => filteredPrompts.filter((p) => !p.pinned), [filteredPrompts])
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const p of prompts) counts[p.category] = (counts[p.category] || 0) + 1
+    return counts
+  }, [prompts])
 
   if (isLoading) {
     return (
@@ -435,29 +459,36 @@ export function PromptsView() {
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-5xl space-y-4 p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search prompts..."
-              className="pl-9"
-            />
-          </div>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> New Prompt
-          </Button>
+        <PageHeader
+          eyebrow="Library"
+          title="Prompts"
+          description="Reusable instructions and templates, ready to drop into any conversation."
+          icon={Library}
+          actions={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-1.5 h-4 w-4" /> New prompt
+            </Button>
+          }
+        />
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search prompts..."
+            className="pl-9"
+          />
         </div>
 
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setCategory(null)}
             className={cn(
-              'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              'fx-press inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-1',
               !selectedCategory
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-transparent text-muted-foreground hover:bg-accent'
+                ? 'border-fx-gold/30 bg-fx-gold/15 text-foreground'
+                : 'border-transparent bg-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'
             )}
           >
             All ({prompts.length})
@@ -467,13 +498,13 @@ export function PromptsView() {
               key={cat}
               onClick={() => setCategory(cat)}
               className={cn(
-                'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                'fx-press inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-1',
                 selectedCategory === cat
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-transparent text-muted-foreground hover:bg-accent'
+                  ? 'border-fx-gold/30 bg-fx-gold/15 text-foreground'
+                  : 'border-transparent bg-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'
               )}
             >
-              {cat} ({prompts.filter((p) => p.category === cat).length})
+              {cat} ({categoryCounts[cat] || 0})
             </button>
           ))}
         </div>

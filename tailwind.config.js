@@ -14,6 +14,25 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Manrope', 'Segoe UI', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['Sora', 'Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      boxShadow: {
+        soft: 'var(--fx-shadow-soft)',
+        lift: 'var(--fx-shadow-lift)',
+        float: 'var(--fx-shadow-float)',
+      },
+      transitionTimingFunction: {
+        fx: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
+        'fx-spring': 'cubic-bezier(0.34, 1.3, 0.64, 1)',
+      },
+      transitionDuration: {
+        1: '110ms',
+        2: '170ms',
+        3: '260ms',
+        4: '420ms',
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

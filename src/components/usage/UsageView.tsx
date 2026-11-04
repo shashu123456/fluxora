@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatTokens, formatCost, formatDateTime } from '@/lib/utils'
 import { BarChart3, Loader2, AlertTriangle } from 'lucide-react'
@@ -37,13 +38,11 @@ interface ProviderUsageRow {
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-semibold">{value}</p>
-        {sub && <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>}
-      </CardContent>
-    </Card>
+    <div className="fx-panel-quiet p-5">
+      <p className="fx-label">{label}</p>
+      <p className="mt-2 font-display text-[1.6rem] leading-none tracking-tight">{value}</p>
+      {sub && <p className="mt-1.5 text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
   )
 }
 
@@ -131,19 +130,19 @@ export function UsageView() {
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-5xl space-y-6 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" /> Usage
-            </h2>
-            <p className="text-sm text-muted-foreground">Track API usage, costs, and performance.</p>
-          </div>
-          <Button variant="destructive" size="sm" onClick={() => setShowClearDialog(true)}>
-            Clear Usage Data
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Telemetry"
+          title="Usage"
+          description="API activity, spend and response performance across your providers."
+          icon={BarChart3}
+          actions={
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setShowClearDialog(true)}>
+              Clear usage data
+            </Button>
+          }
+        />
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
             label="Total Requests"
             value={summary ? summary.requests.toLocaleString() : '0'}

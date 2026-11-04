@@ -43,13 +43,13 @@ function isOpenAICompatible(provider: ProviderConfig): boolean {
 
 function parseUsage(data: any): TokenUsage | undefined {
   if (!data) return undefined
-  const pt = data.prompt_tokens ?? data.input_tokens ?? data.promptTokens
-  const ct = data.completion_tokens ?? data.output_tokens ?? data.completionTokens
+  const pt = data.prompt_tokens ?? data.input_tokens ?? data.promptTokens ?? data.promptTokenCount
+  const ct = data.completion_tokens ?? data.output_tokens ?? data.completionTokens ?? data.candidatesTokenCount
   if (pt == null && ct == null) return undefined
   return {
     promptTokens: pt ?? 0,
     completionTokens: ct ?? 0,
-    totalTokens: (data.total_tokens ?? data.totalTokens) || (pt ?? 0) + (ct ?? 0),
+    totalTokens: (data.total_tokens ?? data.totalTokens ?? data.totalTokenCount) || (pt ?? 0) + (ct ?? 0),
   }
 }
 

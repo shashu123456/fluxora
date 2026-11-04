@@ -2,11 +2,22 @@ import { ipcMain } from 'electron'
 import { get, run } from '../database'
 import path from 'path'
 import fs from 'fs'
-import type { WorkspaceIndex } from '../../src/types'
+import type { WorkspaceIndex, WorkspaceHealth } from '../../src/types'
 import { SKIP_DIRS } from './shared'
+import { canonicalizePath, isCanonicalPathInsideRoot } from '../security-policy'
+import { buildWorkspaceIntelligence, getWorkspaceIntelligence } from '../services/workspaceIntelligence'
 
 const MAX_SCAN_FILES = 50000
 const MAX_DEPTH = 14
+
+function readTextInsideRoot(root: string, filePath: string): string {
+  const canonicalRoot = canonicalizePath(root)
+  const canonicalFile = canonicalizePath(filePath)
+  if (!isCanonicalPathInsideRoot(canonicalFile, canonicalRoot)) {
+    throw new Error('Blocked: file is outside the workspace folder.')
+  }
+  return fs.readFileSync(canonicalFile, 'utf-8')
+}
 
 const LANGUAGE_BY_EXT: Record<string, string> = {
   ts: 'TypeScript', tsx: 'TypeScript', js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript',
@@ -41,6 +52,7 @@ function walkDir(
     }
     for (const entry of entries) {
       if (state.done) return
+      if (entry.isSymbolicLink()) continue
       if (entry.name.startsWith('.') && entry.isDirectory() && entry.name !== '.github') continue
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -75,15 +87,15 @@ function walkDir(
   return walkAsync(dir, depth)
 }
 
-function readJsonSafe(p: string): any | null {
+function readJsonSafe(root: string, p: string): any | null {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    return JSON.parse(readTextInsideRoot(root, p))
   } catch {
     return null
   }
 }
 
-function detectPackageManagers(root: string): {
+export function detectPackageManagers(root: string): {
   managers: string[]
   dependencies: Record<string, Record<string, string>>
 } {
@@ -93,7 +105,7 @@ function detectPackageManagers(root: string): {
   const has = (p: string) => fs.existsSync(path.join(root, p))
 
   if (has('package.json')) {
-    const pkg = readJsonSafe(path.join(root, 'package.json'))
+    const pkg = readJsonSafe(root, path.join(root, 'package.json'))
     if (pkg) {
       const type = has('pnpm-lock.yaml') ? 'pnpm' : has('yarn.lock') ? 'yarn' : has('bun.lockb') ? 'bun' : has('package-lock.json') ? 'npm' : 'npm'
       if (!managers.includes(type)) managers.push(type)
@@ -109,7 +121,7 @@ function detectPackageManagers(root: string): {
     if (!managers.includes('pip')) managers.push('pip')
     const deps: Record<string, string> = {}
     try {
-      for (const line of fs.readFileSync(path.join(root, 'requirements.txt'), 'utf-8').split('\n')) {
+      for (const line of readTextInsideRoot(root, path.join(root, 'requirements.txt')).split('\n')) {
         const t = line.trim()
         if (!t || t.startsWith('#')) continue
         const m = t.match(/^([A-Za-z0-9_.\-]+)\s*(?:[<>=!~]+\s*([^\s;]+))?.*$/)
@@ -124,7 +136,7 @@ function detectPackageManagers(root: string): {
   if (has('Cargo.toml')) {
     if (!managers.includes('cargo')) managers.push('cargo')
     try {
-      const toml = fs.readFileSync(path.join(root, 'Cargo.toml'), 'utf-8')
+      const toml = readTextInsideRoot(root, path.join(root, 'Cargo.toml'))
       const deps: Record<string, string> = {}
       const lines = toml.split('\n')
       let inSection = false
@@ -143,16 +155,16 @@ function detectPackageManagers(root: string): {
     if (!managers.includes('go')) managers.push('go')
     const deps: Record<string, string> = {}
     try {
-      for (const line of fs.readFileSync(path.join(root, 'go.mod'), 'utf-8').split('\n')) {
-        const m = line.trim().match(/^([A-Za-z0-9_.\-/.]+)\s+(v[0-9][^\s]*)/)
-        if (m) deps[m[1]] = m[2]
+      for (const line of readTextInsideRoot(root, path.join(root, 'go.mod')).split('\n')) {
+        const m = line.trim().match(/^(?:require\s+)?([A-Za-z0-9_.\-/.]+)\s+(v[0-9][^\s]*)/)
+        if (m && m[1] !== 'module' && m[1] !== 'go') deps[m[1]] = m[2]
       }
     } catch {}
     dependencies.go = deps
   }
   if (has('composer.json')) {
     if (!managers.includes('composer')) managers.push('composer')
-    const c = readJsonSafe(path.join(root, 'composer.json'))
+    const c = readJsonSafe(root, path.join(root, 'composer.json'))
     if (c) {
       const deps: Record<string, string> = {}
       for (const [name, ver] of Object.entries(c.require || {})) deps[name] = String(ver)
@@ -177,7 +189,7 @@ const DEP_FRAMEWORK_MAP: Record<string, string> = {
   gatsby: 'Gatsby', remix: 'Remix', '@docusaurus/core': 'Docusaurus',
 }
 
-function detectFrameworks(root: string, allDeps: Record<string, Record<string, string>>): string[] {
+export function detectFrameworks(root: string, allDeps: Record<string, Record<string, string>>): string[] {
   const detected = new Set<string>()
   // From all dep maps, map dep names to framework names
   for (const deps of Object.values(allDeps)) {
@@ -246,19 +258,18 @@ const CONFIG_FILE_PATTERNS = [
   /^Makefile$/, /^CMakeLists\.txt$/, /^\.env$/,
 ]
 
-function detectConfigFiles(root: string): { name: string; path: string }[] {
+export function detectConfigFiles(root: string): { name: string; path: string }[] {
   const result: { name: string; path: string }[] = []
   try {
     const entries = fs.readdirSync(root, { withFileTypes: true })
     for (const entry of entries) {
-      if (entry.name.startsWith('.') && entry.name !== '.env' && entry.name !== '.dockerignore') continue
       if (entry.isDirectory()) {
-        // Special dirs that are "config" entries
         if (['prisma', '.github', '.vscode', '.husky'].includes(entry.name)) {
           result.push({ name: `${entry.name}/`, path: path.join(root, entry.name) })
         }
         continue
       }
+      if (entry.name.startsWith('.') && entry.name !== '.env' && entry.name !== '.dockerignore') continue
       const matches = CONFIG_FILE_PATTERNS.some((re) => re.test(entry.name))
       if (matches) {
         result.push({ name: entry.name, path: path.join(root, entry.name) })
@@ -273,7 +284,8 @@ function findReadme(root: string): { path: string; snippet: string } | undefined
     if (/^readme/i.test(name)) {
       const p = path.join(root, name)
       try {
-        const content = fs.readFileSync(p, 'utf-8').slice(0, 80_000)
+        if (fs.lstatSync(p).isSymbolicLink()) continue
+        const content = readTextInsideRoot(root, p).slice(0, 80_000)
         return { path: p, snippet: content.slice(0, 500) }
       } catch { /* fall through */ }
     }
@@ -288,7 +300,7 @@ function getGitInfo(root: string): WorkspaceIndex['git'] {
 
   let branch = 'unknown'
   try {
-    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf-8').trim()
+    const head = readTextInsideRoot(root, path.join(gitDir, 'HEAD')).trim()
     const m = head.match(/ref:\s*refs\/heads\/(.+)/)
     if (m) branch = m[1]
   } catch {}
@@ -333,13 +345,100 @@ function getTopStructure(root: string): string[] {
   return result
 }
 
+const ENTRY_POINT_CANDIDATES = [
+  'index.js', 'index.ts', 'index.mjs', 'main.js', 'main.ts', 'app.js', 'app.ts',
+  'server.js', 'server.ts', 'src/index.ts', 'src/index.js', 'src/main.ts', 'src/main.js',
+  'src/App.tsx', 'src/App.jsx', 'src/App.vue', 'src/routes.ts', 'src/router.ts',
+  'src/main.py', 'manage.py', 'app.py', 'main.go', 'src/main.rs', 'src/lib.rs',
+  'index.html', 'public/index.html',
+]
+
+export function detectEntryPoints(root: string): string[] {
+  const found: string[] = []
+  for (const candidate of ENTRY_POINT_CANDIDATES) {
+    if (fs.existsSync(path.join(root, candidate))) found.push(candidate)
+    if (found.length >= 6) break
+  }
+  // package.json main/bin field
+  try {
+    const pkg = readJsonSafe(root, path.join(root, 'package.json'))
+    if (pkg?.main && typeof pkg.main === 'string' && fs.existsSync(path.join(root, pkg.main))) {
+      if (!found.includes(pkg.main)) found.unshift(pkg.main)
+    }
+  } catch {}
+  return found.slice(0, 8)
+}
+
+export function detectDocs(root: string): string[] {
+  const docs: string[] = []
+  try {
+    // Top-level markdown files
+    for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+      if (e.isFile() && /\.(md|mdx|rst|txt)$/i.test(e.name)) docs.push(e.name)
+      if (docs.length >= 10) break
+    }
+    // docs/ directory
+    const docsDir = path.join(root, 'docs')
+    if (fs.existsSync(docsDir) && !fs.lstatSync(docsDir).isSymbolicLink()) {
+      for (const e of fs.readdirSync(docsDir, { withFileTypes: true })) {
+        if (e.isFile() && /\.(md|mdx|rst|txt)$/i.test(e.name)) docs.push(`docs/${e.name}`)
+        if (docs.length >= 16) break
+      }
+    }
+  } catch {}
+  return docs.sort()
+}
+
+export function detectTestDirs(root: string): string[] {
+  const testDirs: string[] = []
+  try {
+    const topCandidates = ['tests', 'test', '__tests__', 'spec', 'e2e', 'cypress', 'playwright']
+    for (const d of topCandidates) {
+      if (fs.existsSync(path.join(root, d)) && fs.statSync(path.join(root, d)).isDirectory()) testDirs.push(d)
+    }
+    // Common nested test dirs
+    for (const d of ['src/tests', 'src/__tests__', 'app/tests', 'test/unit', 'test/integration']) {
+      if (fs.existsSync(path.join(root, d))) testDirs.push(d)
+    }
+    // Test config presence implies testing even without obvious dirs
+  } catch {}
+  return testDirs
+}
+
+export function computeHealth(root: string, index: Omit<WorkspaceIndex, 'health'>): WorkspaceHealth {
+  const has = (p: string) => fs.existsSync(path.join(root, p))
+  const hasTestConfig = ['jest.config.js', 'jest.config.ts', 'jest.config.mjs', 'vitest.config.ts', 'vitest.config.js', 'playwright.config.ts', 'cypress.config.ts', 'cypress.config.js'].some(has)
+  const signals: WorkspaceHealth['signals'] = [
+    { key: 'readme', label: 'README', ok: !!index.readme, weight: 2 },
+    { key: 'tests', label: 'Tests', ok: (index.testDirs?.length || 0) > 0 || hasTestConfig, weight: 3 },
+    { key: 'ci', label: 'CI/CD', ok: has('.github/workflows') || has('.gitlab-ci.yml') || has('Jenkinsfile'), weight: 2 },
+    { key: 'linting', label: 'Linting', ok: index.configFiles.some((c) => /eslint|biome|prettier/i.test(c.name)), weight: 1 },
+    { key: 'types', label: 'TypeScript', ok: index.configFiles.some((c) => /tsconfig/i.test(c.name)) || index.languages.some((l) => l.lang === 'TypeScript'), weight: 2 },
+    { key: 'env', label: 'Env template', ok: has('.env.example') || has('.env.sample') || has('.env.template'), weight: 1 },
+    { key: 'git', label: 'Git', ok: index.git.isRepo, weight: 2 },
+    { key: 'docker', label: 'Docker', ok: has('Dockerfile') || has('docker-compose.yml') || has('docker-compose.yaml'), weight: 1 },
+    { key: 'docs', label: 'Docs', ok: (index.docs?.length || 0) > 1, weight: 1 },
+  ]
+  const total = signals.reduce((a, s) => a + s.weight, 0)
+  const earned = signals.reduce((a, s) => a + (s.ok ? s.weight : 0), 0)
+  return { score: total > 0 ? Math.round((earned / total) * 100) : 0, signals }
+}
+
 export async function indexWorkspace(workspaceId: string): Promise<WorkspaceIndex | null> {
   const ws = await get<any>('SELECT path FROM workspaces WHERE id = ?', [workspaceId])
-  if (!ws || !ws.path || !fs.existsSync(ws.path)) return null
+  if (!ws || !ws.path) return null
+
+  let root: string
+  try {
+    root = canonicalizePath(ws.path)
+    if (!fs.statSync(root).isDirectory()) return null
+  } catch {
+    return null
+  }
 
   const started = Date.now()
   const state = { fileCount: 0, dirCount: 0, totalSize: 0, langCounts: {} as Record<string, number>, recentFiles: [] as { path: string; modifiedAt: number }[], done: false }
-  await walkDir(ws.path, 0, state)
+  await walkDir(root, 0, state)
 
   const languages = Object.entries(state.langCounts)
     .filter(([, c]) => c > 0)
@@ -352,14 +451,17 @@ export async function indexWorkspace(workspaceId: string): Promise<WorkspaceInde
     .slice(0, 10)
     .map((f) => ({ path: f.path, modifiedAt: f.modifiedAt }))
 
-  const { managers, dependencies } = detectPackageManagers(ws.path)
-  const frameworks = detectFrameworks(ws.path, dependencies)
-  const configFiles = detectConfigFiles(ws.path)
-  const readme = findReadme(ws.path)
-  const git = getGitInfo(ws.path)
-  const topStructure = getTopStructure(ws.path)
+  const { managers, dependencies } = detectPackageManagers(root)
+  const frameworks = detectFrameworks(root, dependencies)
+  const configFiles = detectConfigFiles(root)
+  const readme = findReadme(root)
+  const git = getGitInfo(root)
+  const topStructure = getTopStructure(root)
+  const entryPoints = detectEntryPoints(root)
+  const docs = detectDocs(root)
+  const testDirs = detectTestDirs(root)
 
-  const index: WorkspaceIndex = {
+  const base: Omit<WorkspaceIndex, 'health'> = {
     languages,
     fileCount: state.fileCount,
     dirCount: state.dirCount,
@@ -373,9 +475,14 @@ export async function indexWorkspace(workspaceId: string): Promise<WorkspaceInde
     readmeSnippet: readme?.snippet,
     topStructure,
     recentFiles,
+    entryPoints,
+    docs,
+    testDirs,
     indexedAt: Date.now(),
     durationMs: Date.now() - started,
   }
+  const health = computeHealth(root, base)
+  const index: WorkspaceIndex = { ...base, health }
 
   await run(
     `INSERT INTO workspace_index (workspace_id, data, indexed_at) VALUES (?, ?, ?)
@@ -397,6 +504,14 @@ export async function getWorkspaceIndex(workspaceId: string): Promise<WorkspaceI
 }
 
 export function registerWorkspaceIndexIpc() {
-  ipcMain.handle('workspace:index', async (_e, workspaceId: string) => indexWorkspace(workspaceId))
+  ipcMain.handle('workspace:index', async (_e, workspaceId: string) => {
+    const idx = await indexWorkspace(workspaceId)
+    if (idx) {
+      try { await buildWorkspaceIntelligence(workspaceId) } catch {}
+    }
+    return idx
+  })
   ipcMain.handle('workspace:get-index', async (_e, workspaceId: string) => getWorkspaceIndex(workspaceId))
+  ipcMain.handle('workspace:intelligence', async (_e, workspaceId: string) => getWorkspaceIntelligence(workspaceId))
+  ipcMain.handle('workspace:build-intelligence', async (_e, workspaceId: string) => buildWorkspaceIntelligence(workspaceId))
 }

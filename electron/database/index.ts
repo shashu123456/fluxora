@@ -227,7 +227,15 @@ async function runMigrations() {
       exit_code INTEGER,
       cwd TEXT,
       created_at INTEGER NOT NULL,
-      duration_ms INTEGER NOT NULL DEFAULT 0
+      duration_ms INTEGER NOT NULL DEFAULT 0,
+      approved_by TEXT,
+      command_hash TEXT,
+      status TEXT,
+      approval_id TEXT,
+      output_size INTEGER DEFAULT 0,
+      truncated INTEGER DEFAULT 0,
+      cancelled INTEGER DEFAULT 0,
+      finished_at INTEGER
     );
     `,
     `
@@ -297,6 +305,67 @@ async function runMigrations() {
     `
     CREATE INDEX IF NOT EXISTS idx_brain_pinned ON project_brain(pinned);
     `,
+    `
+    CREATE TABLE IF NOT EXISTS developer_events (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      key TEXT,
+      value TEXT,
+      workspace_id TEXT,
+      created_at INTEGER NOT NULL
+    );
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_dev_events_kind ON developer_events(kind);
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_dev_events_created ON developer_events(created_at);
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_dev_events_workspace ON developer_events(workspace_id);
+    `,
+    `
+    CREATE TABLE IF NOT EXISTS work_sessions (
+      id TEXT PRIMARY KEY,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      workspace_id TEXT,
+      workspace_name TEXT,
+      chats_created INTEGER NOT NULL DEFAULT 0,
+      ai_requests INTEGER NOT NULL DEFAULT 0,
+      recommendations_accepted INTEGER NOT NULL DEFAULT 0,
+      files_changed INTEGER NOT NULL DEFAULT 0,
+      workspace_switches INTEGER NOT NULL DEFAULT 0,
+      summary TEXT,
+      created_at INTEGER NOT NULL
+    );
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_work_sessions_started ON work_sessions(started_at);
+    `,
+    `
+    CREATE TABLE IF NOT EXISTS secret_records (
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'api-key',
+      encrypted_payload TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      fingerprint TEXT NOT NULL,
+      storage_mode TEXT NOT NULL,
+      validation_status TEXT NOT NULL DEFAULT 'unchecked',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_used_at INTEGER,
+      last_rotated_at INTEGER,
+      last_validated_at INTEGER,
+      expires_at INTEGER,
+      PRIMARY KEY (owner_type, owner_id, kind)
+    );
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_secret_records_owner ON secret_records(owner_type, owner_id);
+    `,
   ]
 
   for (const migration of migrations) {
@@ -307,6 +376,13 @@ async function runMigrations() {
     ['providers', 'capabilities', 'capabilities TEXT'],
     ['prompts', 'description', 'description TEXT'],
     ['terminal_history', 'approved_by', 'approved_by TEXT'],
+    ['terminal_history', 'command_hash', 'command_hash TEXT'],
+    ['terminal_history', 'status', 'status TEXT'],
+    ['terminal_history', 'approval_id', 'approval_id TEXT'],
+    ['terminal_history', 'output_size', 'output_size INTEGER DEFAULT 0'],
+    ['terminal_history', 'truncated', 'truncated INTEGER DEFAULT 0'],
+    ['terminal_history', 'cancelled', 'cancelled INTEGER DEFAULT 0'],
+    ['terminal_history', 'finished_at', 'finished_at INTEGER'],
   ]
   for (const [table, column, ddl] of schemaMigrations) {
     await ensureColumn(table, column, ddl)
@@ -314,5 +390,5 @@ async function runMigrations() {
 }
 
 export function getAllTables(): string[] {
-  return ['settings', 'providers', 'workspaces', 'chats', 'messages', 'memories', 'prompts', 'usage', 'notifications', 'terminal_history', 'workspace_index', 'project_brain']
+  return ['settings', 'providers', 'workspaces', 'chats', 'messages', 'memories', 'prompts', 'usage', 'notifications', 'terminal_history', 'workspace_index', 'project_brain', 'developer_events', 'work_sessions', 'secret_records']
 }

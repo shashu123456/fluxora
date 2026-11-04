@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { all, get, run } from '../database'
+import { syncBrain2 } from '../services/brain2'
+import { buildBrainInsights } from '../services/brainInsights'
 import { ProjectBrainEntry } from '../../src/types'
 
 function mapRow(row: any): ProjectBrainEntry {
@@ -105,5 +107,13 @@ export function registerBrainIpc() {
       [workspaceId, like, like]
     )
     return rows.map(mapRow)
+  })
+
+  ipcMain.handle('brain:sync', async (_e, workspaceId: string) => {
+    return syncBrain2(workspaceId)
+  })
+
+  ipcMain.handle('brain:insights', async (_e, workspaceId: string) => {
+    return buildBrainInsights(workspaceId)
   })
 }

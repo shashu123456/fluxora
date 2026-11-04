@@ -22,8 +22,9 @@ import { cn, formatBytes, formatDateTime } from '@/lib/utils'
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronUp,
   Loader2, Eye, EyeOff, RefreshCw, AlertTriangle, Search,
-  Cpu, Database, HardDrive, Activity, FolderOpen,
+  Cpu, Database, HardDrive, Activity, FolderOpen, Settings,
 } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 const CATEGORIES: { id: string; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -142,10 +143,22 @@ const PROVIDER_PRESETS: Record<string, {
 
 const MAX_TOKEN_OPTIONS = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 100000]
 
-function maskKey(key: string): string {
-  if (!key) return 'No key'
-  if (key.length <= 8) return '••••••••'
-  return key.slice(0, 3) + '•••' + key.slice(-4)
+function secretSummary(provider: ProviderConfig): { label: string; variant: 'outline' | 'secondary' | 'success' | 'warning' } {
+  const secret = provider.secret
+  if (!secret?.configured) {
+    return { label: provider.hasKey ? 'Key stored' : 'No key', variant: 'outline' }
+  }
+  const fingerprint = secret.maskedFingerprint ? ` ${secret.maskedFingerprint}` : ''
+  const label =
+    secret.health === 'configured' ? 'Connected' :
+    secret.health === 'needs-attention' ? 'Needs attention' :
+    secret.health === 'expired' ? 'Expired' : 'Missing'
+  return { label: `${label}${fingerprint}`, variant: secret.health === 'configured' ? 'success' : secret.health === 'needs-attention' ? 'warning' : 'secondary' }
+}
+
+function storageLabel(provider: ProviderConfig): string {
+  if (!provider.secret?.configured) return ''
+  return provider.secret.storageMode === 'os' ? 'OS keychain' : 'Local encrypted fallback'
 }
 
 function CapabilityChips({ capabilities }: { capabilities?: any }) {
@@ -174,7 +187,7 @@ function CapabilityChips({ capabilities }: { capabilities?: any }) {
 
 export function SettingsView() {
   const { providers, loadProviders, createProvider, updateProvider, deleteProvider, refreshModels } = useProviderStore()
-  const { settings, loadSettings, updateSettings, resetSettings, exportAll, importAll } = useSettingsStore()
+  const { settings, loadSettings, updateSettings, resetSettings, exportAll } = useSettingsStore()
   const { theme, setTheme } = useUIStore()
   const { workspaces, indexes } = useWorkspaceStore()
 
@@ -192,6 +205,11 @@ export function SettingsView() {
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({})
   const [testingId, setTestingId] = useState<string | null>(null)
   const [refreshingId, setRefreshingId] = useState<string | null>(null)
+  const [rotatingId, setRotatingId] = useState<string | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<BackupInfo | null>(null)
+  const [restoring, setRestoring] = useState(false)
+  const [importPreview, setImportPreview] = useState<any | null>(null)
+  const [importing, setImporting] = useState(false)
   const [refreshError, setRefreshError] = useState<Record<string, string>>({})
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; latencyMs: number; error?: string }>>({})
   const [deleteTarget, setDeleteTarget] = useState<ProviderConfig | null>(null)
@@ -326,6 +344,27 @@ export function SettingsView() {
     }
   }
 
+  const handleRotateSecret = async (provider: ProviderConfig) => {
+    setRotatingId(provider.id)
+    try {
+      await window.api.providers.rotate(provider.id)
+      await loadProviders()
+      await window.api.notifications?.create?.({
+        type: 'success',
+        title: 'Secret re-encrypted',
+        message: `${provider.name} was re-sealed with the current storage key.`,
+      })
+    } catch (e: any) {
+      await window.api.notifications?.create?.({
+        type: 'error',
+        title: 'Re-encryption failed',
+        message: e?.message || 'Could not re-encrypt the stored secret.',
+      })
+    } finally {
+      setRotatingId(null)
+    }
+  }
+
   const handleToggleEnabled = async (provider: ProviderConfig) => {
     await updateProvider(provider.id, { enabled: !provider.enabled })
   }
@@ -386,12 +425,68 @@ export function SettingsView() {
     setCreatingBackup(false)
   }
 
-  const handleRestoreBackup = async (backupPath: string) => {
+  const handleRestoreBackup = (backupPath: string) => {
+    setRestoreTarget(backups.find((backup) => backup.path === backupPath) || null)
+  }
+
+  const performRestore = async () => {
+    if (!restoreTarget) return
+    setRestoring(true)
     try {
-      await window.api.backup.restore(backupPath)
-      await window.api.notifications?.create?.({ type: 'success', title: 'Backup Restored', message: 'Backup restored successfully. Restart to apply.' })
+      await window.api.backup.restore(restoreTarget.path)
+      await window.api.notifications?.create?.({
+        type: 'success',
+        title: 'Backup verified',
+        message: 'Restore verified. Fluxora will restart automatically.',
+      })
     } catch (err: any) {
       await window.api.notifications?.create?.({ type: 'error', title: 'Restore Failed', message: err?.message || 'Could not restore backup.' })
+    } finally {
+      setRestoring(false)
+      setRestoreTarget(null)
+    }
+  }
+
+  const handleValidateImport = async () => {
+    try {
+      const preview = await window.api.settings.validateImport()
+      if (!preview) return
+      if (!preview.ok) {
+        await window.api.notifications?.create?.({
+          type: 'error',
+          title: 'Import validation failed',
+          message: preview.errors?.join(' ') || 'The selected file is not a valid Fluxora export.',
+        })
+        return
+      }
+      setImportPreview(preview)
+    } catch (err: any) {
+      await window.api.notifications?.create?.({
+        type: 'error',
+        title: 'Import validation failed',
+        message: err?.message || 'Could not read the selected file.',
+      })
+    }
+  }
+
+  const performImport = async () => {
+    if (!importPreview?.path) return
+    setImporting(true)
+    try {
+      const result = await window.api.settings.importAll(importPreview.path)
+      await Promise.all([loadProviders(), loadSettings()])
+      const list = await window.api.backup.list()
+      setBackups(list || [])
+      setImportPreview(null)
+      await window.api.notifications?.create?.({
+        type: 'success',
+        title: 'Import complete',
+        message: `${result?.counts ? Object.values(result.counts).reduce((sum: number, value) => sum + Number(value || 0), 0) : ''} records imported. Re-enter provider credentials if you moved to a new device.`,
+      })
+    } catch (err: any) {
+      await window.api.notifications?.create?.({ type: 'error', title: 'Import failed', message: err?.message || 'Could not import the selected file.' })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -415,11 +510,13 @@ export function SettingsView() {
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-3xl space-y-6 p-6">
+        <PageHeader
+          eyebrow="Preferences"
+          title="Settings"
+          description="Providers, behavior and local data — all stored on this machine."
+          icon={Settings}
+        />
         <div className="flex flex-col gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Settings</h2>
-            <p className="text-sm text-muted-foreground">Configure your providers, preferences, and data.</p>
-          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -436,10 +533,10 @@ export function SettingsView() {
                 type="button"
                 onClick={() => setCat(c.id)}
                 className={cn(
-                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  'fx-press rounded-full px-3 py-1 text-[11px] font-medium transition-colors duration-1',
                   cat === c.id
                     ? 'bg-fx-gold/15 text-foreground ring-1 ring-inset ring-fx-gold/30'
-                    : 'text-muted-foreground hover:bg-muted'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
                 )}
               >
                 {c.label}
@@ -543,6 +640,8 @@ export function SettingsView() {
                   {providers.map((provider) => {
                     const testResult = testResults[provider.id]
                     const isExpanded = expandedModels[provider.id]
+                    const secret = secretSummary(provider)
+                    const storage = storageLabel(provider)
                     return (
                       <div key={provider.id} className="rounded-lg border p-3 space-y-2">
                         <div className="flex items-center justify-between">
@@ -565,7 +664,8 @@ export function SettingsView() {
                         </div>
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <span className="truncate max-w-[200px]">{provider.baseUrl}</span>
-                          <span>{maskKey(provider.apiKey)}</span>
+                          <Badge variant={secret.variant} className="text-[10px]">{secret.label}</Badge>
+                          {storage && <span>{storage}</span>}
                         </div>
                         {provider.capabilities && (
                           <CapabilityChips capabilities={provider.capabilities} />
@@ -585,6 +685,22 @@ export function SettingsView() {
                             )}
                             Test
                           </Button>
+                          {provider.secret?.configured && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => handleRotateSecret(provider)}
+                              disabled={rotatingId === provider.id}
+                            >
+                              {rotatingId === provider.id ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="mr-1 h-3 w-3" />
+                              )}
+                              Re-encrypt
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -907,13 +1023,64 @@ export function SettingsView() {
               <Button variant="outline" className="flex-1" onClick={() => exportAll()}>
                 Export All Data
               </Button>
-              <Button variant="outline" className="flex-1" onClick={() => importAll()}>
+              <Button variant="outline" className="flex-1" onClick={handleValidateImport}>
                 Import All Data
               </Button>
             </div>
           </CardContent>
         </Card>
         )}
+
+        <Dialog open={!!restoreTarget} onOpenChange={(open) => { if (!open && !restoring) setRestoreTarget(null) }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Restore this backup?</DialogTitle>
+              <DialogDescription>
+                {restoreTarget?.name} will replace the current database after an integrity check. A pre-restore copy is kept.
+                Fluxora will restart automatically.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRestoreTarget(null)} disabled={restoring}>Cancel</Button>
+              <Button variant="destructive" onClick={performRestore} disabled={restoring}>
+                {restoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Restore backup
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!importPreview} onOpenChange={(open) => { if (!open && !importing) setImportPreview(null) }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Import this data?</DialogTitle>
+              <DialogDescription>
+                The file is validated before import. A safety backup is created first. Provider credentials are never imported:
+                re-enter them if this is a different device.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 text-sm">
+              {Object.entries(importPreview?.counts || {}).filter(([, value]) => Number(value) > 0).map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between rounded-md border px-3 py-1.5">
+                  <span className="capitalize text-muted-foreground">{key}</span>
+                  <span className="font-mono text-xs">{String(value)}</span>
+                </div>
+              ))}
+              {importPreview?.warnings?.length > 0 && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  {importPreview.warnings.join(' ')}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setImportPreview(null)} disabled={importing}>Cancel</Button>
+              <Button onClick={performImport} disabled={importing}>
+                {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Import data
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {visible(CARD_META.system) && (
         <Card>

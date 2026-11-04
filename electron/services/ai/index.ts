@@ -1,7 +1,7 @@
 import { ProviderConfig, ModelConfig, AIMessageParam } from '../../../src/types'
 import { get } from '../../database'
 import { complete, getEndpointForPath, stream, StreamCallbacks } from './providers'
-import { decryptSecret } from '../../security'
+import { getSecretManager } from '../secrets/manager'
 
 export function getDefaultProviderConfigs(): Omit<ProviderConfig, 'id' | 'createdAt' | 'updatedAt' | 'apiKey'>[] {
   return [
@@ -109,14 +109,16 @@ export async function getProviderById(id: string): Promise<ProviderConfig | unde
   return get<ProviderRow>('SELECT * FROM providers WHERE id = ?', [id]).then(mapRow)
 }
 
-function mapRow(row: ProviderRow | undefined): ProviderConfig | undefined {
+async function mapRow(row: ProviderRow | undefined): Promise<ProviderConfig | undefined> {
   if (!row) return undefined
+  const secretManager = getSecretManager()
+  const apiKey = (await secretManager.getProviderSecret(row.id)) || ''
   return {
     id: row.id,
     name: row.name,
     type: row.type,
     baseUrl: row.base_url,
-    apiKey: decryptSecret(row.api_key),
+    apiKey,
     models: JSON.parse(row.models || '[]'),
     enabled: !!row.enabled,
     isCustom: !!row.is_custom,
@@ -143,23 +145,25 @@ interface ProviderRow {
 export async function listEnabledProviders(): Promise<ProviderConfig[]> {
   const { all } = await import('../../database')
   const rows = await all<any>('SELECT * FROM providers WHERE enabled = 1')
-  return rows.map(mapRowAny)
-}
-
-function mapRowAny(row: any): ProviderConfig {
-  return {
-    id: row.id,
-    name: row.name,
-    type: row.type,
-    baseUrl: row.base_url,
-    apiKey: decryptSecret(row.api_key),
-    models: JSON.parse(row.models || '[]'),
-    enabled: !!row.enabled,
-    isCustom: !!row.is_custom,
-    color: row.color,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+  const secretManager = getSecretManager()
+  const result: ProviderConfig[] = []
+  for (const row of rows) {
+    const apiKey = (await secretManager.getProviderSecret(row.id)) || ''
+    result.push({
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      baseUrl: row.base_url,
+      apiKey,
+      models: JSON.parse(row.models || '[]'),
+      enabled: !!row.enabled,
+      isCustom: !!row.is_custom,
+      color: row.color,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })
   }
+  return result
 }
 
 export async function completeChat(

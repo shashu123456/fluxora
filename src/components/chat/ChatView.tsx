@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, memo } from 'react'
+import { useEffect, useMemo, useRef, useState, memo, useCallback } from 'react'
 import { Send, Square, Plus, Paperclip, Copy, User, Bot, RefreshCw, X, FileText as FileTextIcon, XCircle, Settings, Star, ChevronsUpDown, Check, Upload } from 'lucide-react'
 import obsidianMarkUrl from '@/assets/fluxora-mark-obsidian.svg'
+import { FluxoraMark } from '@/components/brand/FluxoraMark'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chatStore'
 import { useProviderStore } from '@/stores/providerStore'
@@ -144,6 +145,8 @@ export function ChatView() {
   const setActiveTab = useUIStore((s) => s.setActiveTab)
   const pendingPromptContent = useUIStore((s) => s.pendingPromptContent)
   const setPendingPromptContent = useUIStore((s) => s.setPendingPromptContent)
+  const pendingAttachment = useUIStore((s) => s.pendingAttachment)
+  const setPendingAttachment = useUIStore((s) => s.setPendingAttachment)
 
   const [input, setInput] = useState('')
   const [files, setFiles] = useState<AttachedFile[]>([])
@@ -153,7 +156,7 @@ export function ChatView() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dragCounterRef = useRef(0)
 
-  const currentChat = chats.find((c) => c.id === currentChatId)
+  const currentChat = useMemo(() => chats.find((c) => c.id === currentChatId), [chats, currentChatId])
 
   const userHistory = useMemo(
     () => messages.filter((m) => m.role === 'user').map((m) => m.content),
@@ -279,17 +282,32 @@ export function ChatView() {
     }
   }
 
-  const allProviders = providers.filter((p) => p.enabled !== false)
-  const models = allProviders.flatMap((p) =>
-    (p.models || []).map((m) => ({ providerId: p.id, providerName: p.name, model: m }))
+  const allProviders = useMemo(() => providers.filter((p) => p.enabled !== false), [providers])
+  const models = useMemo(
+    () =>
+      allProviders.flatMap((p) =>
+        (p.models || []).map((m) => ({ providerId: p.id, providerName: p.name, model: m }))
+      ),
+    [allProviders]
   )
-  const modelGroups = allProviders
-    .map((p) => ({ provider: p, models: p.models || [] }))
-    .filter((g) => g.models.length > 0)
+  const modelGroups = useMemo(
+    () =>
+      allProviders
+        .map((p) => ({ provider: p, models: p.models || [] }))
+        .filter((g) => g.models.length > 0),
+    [allProviders]
+  )
 
-  function resolveModelName(raw?: string) {
-    return (raw && models.find((x) => x.model.id === raw)?.model.name) || raw || ''
-  }
+  const modelNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const x of models) map.set(x.model.id, x.model.name)
+    return map
+  }, [models])
+
+  const resolveModelName = useCallback(
+    (raw?: string) => (raw && modelNameById.get(raw)) || raw || '',
+    [modelNameById]
+  )
 
   const effectiveProviderId = currentChat?.providerId || settings.defaultProviderId || ''
   const effectiveModelId = currentChat?.modelId || settings.defaultModelId || ''
@@ -298,14 +316,18 @@ export function ChatView() {
   const effectiveModelName = resolveModelName(effectiveModelId) || 'Select a model'
   const effectiveProvider = allProviders.find((p) => p.id === effectiveProviderId)
 
-  const favoriteEntries = modelGroups.flatMap((g) => {
-    const favId = favoriteModels[g.provider.id]
-    if (!favId) return []
-    const m = g.models.find((x) => x.id === favId)
-    return m
-      ? [{ key: `${g.provider.id}:${m.id}`, providerId: g.provider.id, providerName: g.provider.name, model: m }]
-      : []
-  })
+  const favoriteEntries = useMemo(
+    () =>
+      modelGroups.flatMap((g) => {
+        const favId = favoriteModels[g.provider.id]
+        if (!favId) return []
+        const m = g.models.find((x) => x.id === favId)
+        return m
+          ? [{ key: `${g.provider.id}:${m.id}`, providerId: g.provider.id, providerName: g.provider.name, model: m }]
+          : []
+      }),
+    [modelGroups, favoriteModels]
+  )
 
   useEffect(() => {
     if (pendingPromptContent) {
@@ -314,6 +336,24 @@ export function ChatView() {
       requestAnimationFrame(() => textareaRef.current?.focus())
     }
   }, [pendingPromptContent, setPendingPromptContent])
+
+  useEffect(() => {
+    if (!pendingAttachment) return
+    const attached: AttachedFile = {
+      id: newId(),
+      name: pendingAttachment.name,
+      path: pendingAttachment.path,
+      type: 'file',
+      size: pendingAttachment.content?.length ?? 0,
+      content: pendingAttachment.content,
+    }
+    setFiles((prev) => {
+      if (prev.some((f) => f.path === attached.path)) return prev
+      return [...prev, attached]
+    })
+    setPendingAttachment(null)
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }, [pendingAttachment, setPendingAttachment])
 
   useEffect(() => {
     const current = allProviders.find((p) => p.id === settings.defaultProviderId)
@@ -492,7 +532,7 @@ export function ChatView() {
             </div>
           )}
 
-          <div className="fx-composer-surface fx-focus-gold flex items-end gap-1.5 rounded-2xl p-2 shadow-lg shadow-black/10 transition-all duration-200">
+          <div className="fx-composer-surface fx-focus-gold flex items-end gap-1.5 rounded-2xl p-2 shadow-float transition-all duration-2 ease-fx">
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 transition-transform duration-150 hover:scale-105 hover:text-fx-gold" onClick={handleAttach} aria-label="Attach file">
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -549,11 +589,11 @@ function EmptyState({
       />
       <div className="pointer-events-none absolute bottom-0 h-56 w-[120%] bg-gradient-to-t from-background to-transparent" />
       <div className="relative flex flex-col items-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/50 shadow-lg shadow-primary/20 ring-1 ring-white/10">
-          <Bot className="h-8 w-8 text-primary-foreground" />
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#161311] to-[#080705] shadow-[0_16px_44px_-18px_rgba(216,189,132,0.45)] ring-1 ring-white/10">
+          <FluxoraMark size={34} />
         </div>
-        <h1 className="text-2xl font-semibold">{currentChatTitle || 'Fluxora'}</h1>
-        <p className="mt-2 max-w-md text-sm text-muted-foreground">
+        <h1 className="fx-display">{currentChatTitle || 'Fluxora'}</h1>
+        <p className="fx-prose-lead mt-2 max-w-md text-center">
           {needsProvider
             ? 'Connect an AI provider to start chatting — it takes less than a minute.'
             : currentChatTitle
@@ -685,5 +725,5 @@ const MessageBubble = memo(function MessageBubble({
 })
 
 function Cursor() {
-  return <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-foreground align-middle" />
+  return <span className="ml-0.5 inline-block h-[1.05em] w-[2px] animate-stream-pulse rounded-full bg-fx-gold/90 align-[-0.15em]" />
 }

@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useMemoryStore } from '@/stores/memoryStore'
+import { useUIStore } from '@/stores/uiStore'
 import type { MemoryEntry } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -165,9 +167,19 @@ export function MemoryView() {
   const [extracting, setExtracting] = useState(false)
   const [extractedCount, setExtractedCount] = useState<number | null>(null)
 
+  const pendingCreate = useUIStore((s) => s.pendingCreate)
+  const setPendingCreate = useUIStore((s) => s.setPendingCreate)
+
   useEffect(() => {
     getMemorySettings()
   }, [])
+
+  useEffect(() => {
+    if (pendingCreate === 'memory') {
+      setPendingCreate(null)
+      setAddOpen(true)
+    }
+  }, [pendingCreate, setPendingCreate])
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -196,11 +208,22 @@ export function MemoryView() {
     }, 200)
   }, [scope, loadMemories, searchMemories])
 
-  const displayedMemories = searching
-    ? searchResults
-    : typeFilter === 'all'
-      ? memories
-      : memories.filter((m) => m.type === typeFilter)
+  const displayedMemories = useMemo(
+    () =>
+      searching
+        ? searchResults
+        : typeFilter === 'all'
+          ? memories
+          : memories.filter((m) => m.type === typeFilter),
+    [searching, searchResults, typeFilter, memories]
+  )
+
+  const typeCounts = useMemo(() => {
+    const source = searching ? searchResults : memories
+    const counts: Record<string, number> = {}
+    for (const m of source) counts[m.type] = (counts[m.type] || 0) + 1
+    return counts
+  }, [searching, searchResults, memories])
 
   const handlePin = useCallback((memory: MemoryEntry) => {
     updateMemory(memory.id, { pinned: memory.pinned ? 0 : 1 })
@@ -279,41 +302,36 @@ export function MemoryView() {
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-3xl space-y-4 p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-lg font-semibold">Memory</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={memoryEnabled}
-                onCheckedChange={handleToggleEnabled}
-              />
-              <span className="text-xs text-muted-foreground">
+        <PageHeader
+          eyebrow="Knowledge"
+          title="Memory"
+          description="Durable facts, preferences and context Fluxora remembers across conversations."
+          icon={Brain}
+          actions={
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Switch checked={memoryEnabled} onCheckedChange={handleToggleEnabled} />
                 {memoryEnabled ? 'Enabled' : 'Disabled'}
-              </span>
+              </label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAutoExtract}
+                disabled={extracting || memories.length === 0}
+              >
+                {extracting ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Auto-extract
+              </Button>
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Plus className="mr-1.5 h-4 w-4" /> Add memory
+              </Button>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAutoExtract}
-              disabled={extracting || memories.length === 0}
-            >
-              {extracting ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Auto-Extract
-            </Button>
-            <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> Add Memory
-            </Button>
-          </div>
-        </div>
+          }
+        />
 
         {extractedCount !== null && (
           <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
@@ -361,27 +379,25 @@ export function MemoryView() {
           <button
             onClick={() => setTypeFilter('all')}
             className={cn(
-              'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              'fx-press inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-1',
               typeFilter === 'all'
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-transparent text-muted-foreground hover:bg-accent'
+                ? 'border-fx-gold/30 bg-fx-gold/15 text-foreground'
+                : 'border-transparent bg-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'
             )}
           >
             All ({searching ? searchResults.length : memories.length})
           </button>
           {ALL_TYPES.map((t) => {
-            const count = searching
-              ? searchResults.filter((m) => m.type === t).length
-              : memories.filter((m) => m.type === t).length
+            const count = typeCounts[t] || 0
             return (
               <button
                 key={t}
                 onClick={() => setTypeFilter(typeFilter === t ? 'all' : t)}
                 className={cn(
-                  'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                  'fx-press inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-1',
                   typeFilter === t
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-transparent text-muted-foreground hover:bg-accent'
+                    ? 'border-fx-gold/30 bg-fx-gold/15 text-foreground'
+                    : 'border-transparent bg-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'
                 )}
               >
                 {t} ({count})
@@ -391,28 +407,28 @@ export function MemoryView() {
         </div>
 
         {displayedMemories.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="rounded-full bg-muted p-4 mb-4">
+          <div className="fx-empty py-20">
+            <div className="mb-4 rounded-2xl bg-muted/40 p-4">
               <Brain className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-medium">No memories found</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+            <h3 className="font-display text-lg">No memories found</h3>
+            <p className="mt-1 max-w-xs text-sm text-muted-foreground">
               {searchQuery
                 ? 'Try adjusting your search terms.'
                 : 'Add your first memory or let the AI auto-extract facts from conversations.'}
             </p>
             {!searchQuery && (
               <Button onClick={() => setAddOpen(true)} className="mt-4">
-                <Plus className="mr-1.5 h-4 w-4" /> Add Memory
+                <Plus className="mr-1.5 h-4 w-4" /> Add memory
               </Button>
             )}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="fx-panel divide-y divide-border/40 overflow-hidden">
             {displayedMemories.map((memory) => (
               <div
                 key={memory.id}
-                className="group rounded-lg border p-4 transition-colors hover:bg-accent/30"
+                className="group p-4 transition-colors duration-2 hover:bg-accent/30"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1 space-y-1.5">

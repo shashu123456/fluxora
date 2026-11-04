@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { Workspace, WorkspaceIndex } from '../types'
-import { useSettingsStore } from './settingsStore'
+import { useSettingsStore, patchSettings } from './settingsStore'
+import { useIntelligenceStore } from './intelligenceStore'
+
+export type WorkspacePanel = 'explorer' | 'terminal-git' | 'intelligence' | 'brain'
 
 export interface WorkspaceStore {
   workspaces: Workspace[]
@@ -8,6 +11,8 @@ export interface WorkspaceStore {
   isLoading: boolean
   indexes: Record<string, WorkspaceIndex>
   indexing: Record<string, boolean>
+  panel: WorkspacePanel
+  pendingFile: string | null
 
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path?: string) => Promise<Workspace | null>
@@ -18,6 +23,9 @@ export interface WorkspaceStore {
   openFolder: () => Promise<string | null>
   getIndex: (id: string) => Promise<WorkspaceIndex | null>
   indexWorkspace: (id: string) => Promise<WorkspaceIndex | null>
+  setPanel: (panel: WorkspacePanel) => void
+  setPendingFile: (path: string | null) => void
+  focusWorkspace: (id: string, panel?: WorkspacePanel, filePath?: string | null) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -26,6 +34,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   isLoading: false,
   indexes: {},
   indexing: {},
+  panel: 'explorer',
+  pendingFile: null,
 
   loadWorkspaces: async () => {
     set({ isLoading: true })
@@ -57,6 +67,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   deleteWorkspace: async (id) => {
     await window.api.workspace.delete(id)
+    useIntelligenceStore.getState().invalidate(id)
     set((state) => {
       const indexes = { ...state.indexes }
       delete indexes[id]
@@ -69,11 +80,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   selectWorkspace: (id) => {
+    const previous = get().currentWorkspace
     const ws = get().workspaces.find((w) => w.id === id) || null
     set({ currentWorkspace: ws })
     if (ws) {
-      const currentSettings = useSettingsStore.getState().settings
-      window.api.settings.update({ ...currentSettings, lastWorkspaceId: ws.id }).catch(() => {})
+      patchSettings({ lastWorkspaceId: ws.id })
+      if (previous?.id !== ws.id) {
+        try {
+          void window.api?.developer?.track('workspace_switched', {
+            key: ws.id,
+            value: ws.name,
+            workspaceId: ws.id,
+            workspaceName: ws.name,
+          })
+        } catch {
+          /* tracking is best-effort */
+        }
+      }
       if (ws.path && !get().indexes[ws.id]) {
         get().indexWorkspace(ws.id).catch(() => {})
       }
@@ -125,6 +148,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     try {
       const idx = await window.api.workspace.index(id)
       if (idx) {
+        useIntelligenceStore.getState().invalidate(id)
         set((state) => ({
           indexes: { ...state.indexes, [id]: idx },
           indexing: { ...state.indexing, [id]: false },
@@ -137,5 +161,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       set((state) => ({ indexing: { ...state.indexing, [id]: false } }))
       throw e
     }
+  },
+
+  setPanel: (panel) => set({ panel }),
+
+  setPendingFile: (path) => set({ pendingFile: path }),
+
+  /**
+   * Selects a workspace and deep-links into one of its panels. Used by global
+   * search and the command palette so a result always lands on the right
+   * project AND the right panel.
+   */
+  focusWorkspace: (id, panel = 'explorer', filePath = null) => {
+    get().selectWorkspace(id)
+    set({ panel, pendingFile: filePath })
   },
 }))

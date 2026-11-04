@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Chat, Message } from '../types'
 import type { FullWindowApi } from '../types/api'
-import { useSettingsStore } from './settingsStore'
+import { useSettingsStore, patchSettings } from './settingsStore'
 import { useProviderStore } from './providerStore'
 import { useWorkspaceStore } from './workspaceStore'
 import { buildSmartContext } from '@/lib/contextBuilder'
@@ -22,8 +22,7 @@ function modelDisplayName(raw?: string | null): string | undefined {
 
 function persistLastChat(chatId: string | null) {
   if (!chatId) return
-  const currentSettings = useSettingsStore.getState().settings
-  api().settings.update({ ...currentSettings, lastChatId: chatId }).catch(() => {})
+  patchSettings({ lastChatId: chatId })
 }
 
 export interface ChatStore {
@@ -91,6 +90,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: [],
     }))
     persistLastChat(chat.id)
+    try {
+      void api()?.developer?.track('chat_created', {
+        key: chat.id,
+        workspaceId: data.workspaceId,
+      })
+    } catch {
+      /* tracking is best-effort */
+    }
     return chat
   },
 
@@ -180,7 +187,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const state = get()
     if (!state.currentChatId) return
 
-    const settings = await api().settings.get()
+    const settings = useSettingsStore.getState().settings
 
     const requestId =
       (globalThis.crypto &&
@@ -192,12 +199,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       const currentChat = get().chats.find((c) => c.id === state.currentChatId)
       const chatWorkspaceId = currentChat?.workspaceId || 'global'
-      const workspace = useWorkspaceStore.getState().currentWorkspace
+      // Resolve defaults from the chat's own workspace — never from whichever
+      // workspace happens to be active in the sidebar.
+      const chatWorkspace = useWorkspaceStore
+        .getState()
+        .workspaces.find((w) => w.id === chatWorkspaceId)
       const workspaceDefaults =
-        workspace?.settings?.defaultProviderId || workspace?.settings?.defaultModelId
+        chatWorkspace?.settings?.defaultProviderId || chatWorkspace?.settings?.defaultModelId
           ? {
-              providerId: workspace.settings?.defaultProviderId || undefined,
-              modelId: workspace.settings?.defaultModelId || undefined,
+              providerId: chatWorkspace.settings?.defaultProviderId || undefined,
+              modelId: chatWorkspace.settings?.defaultModelId || undefined,
             }
           : undefined
 
@@ -210,8 +221,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!providerId || autoRoute) {
         const route = await api().ai.autoRoute({
           message: content,
-          availableProviders: [],
-          workspaceId: currentChat?.workspaceId || 'global',
+          workspaceId: chatWorkspaceId,
         })
         if (route) {
           providerId = route.providerId
@@ -315,7 +325,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const trimmedMessages = allMessages.length > 60 ? allMessages.slice(-60) : allMessages
 
-      const workspaceSettings = await api().memory.getSettings()
+      const workspaceSettings = await api().memory.getSettings(chatWorkspaceId)
       const memoryEnabled = workspaceSettings?.memoryEnabled !== false
       let enrichedMessages = trimmedMessages
       try {
@@ -356,7 +366,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      llmMessages = llmMessages || enrichedMessages
+      try {
+        void api()?.developer?.track('ai_request', {
+          key: providerId || null,
+          value: modelId || null,
+          workspaceId: chatWorkspaceId,
+        })
+      } catch {
+        /* tracking is best-effort */
+      }
+
       api().ai.streamChat({
         requestId,
         providerId,
@@ -389,7 +408,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     const userMsg = [...messages].reverse().find((m) => m.role === 'user')
     if (userMsg) {
-      await get().streamMessage(userMsg.content)
+      // Preserve the original attachments so the retry keeps its file context.
+      await get().streamMessage(userMsg.content, userMsg.files)
     }
   },
 
@@ -400,7 +420,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   importChat: async () => {
     const newChatId = await api().chat.importChat()
     if (newChatId) {
-      const chats = get().chats
       await get().loadChats('global')
       set({ currentChatId: newChatId })
     }

@@ -1,7 +1,6 @@
 import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
 import typescript from 'highlight.js/lib/languages/typescript'
@@ -55,6 +54,14 @@ function CodeBlock({ language, value }: { language: string; value: string }) {
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  const html = useMemo(() => {
+    const lang = language && hljs.getLanguage(language) ? language : 'plaintext'
+    try {
+      return hljs.highlight(value, { language: lang, ignoreIllegals: true }).value
+    } catch {
+      return null
+    }
+  }, [language, value])
   return (
     <div className="group relative my-3 overflow-hidden rounded-lg border bg-muted/40">
       <div className="flex items-center justify-between border-b bg-muted/60 px-3 py-1.5">
@@ -69,7 +76,11 @@ function CodeBlock({ language, value }: { language: string; value: string }) {
         </button>
       </div>
       <pre className="overflow-x-auto p-3 text-sm">
-        <code className={cn('hljs', language)}>{value}</code>
+        {html !== null ? (
+          <code className={cn('hljs', language)} dangerouslySetInnerHTML={{ __html: html }} />
+        ) : (
+          <code className={cn('hljs', language)}>{value}</code>
+        )}
       </pre>
     </div>
   )
@@ -111,7 +122,6 @@ export const Markdown = memo(function Markdown({ content, className }: MarkdownP
     <div className={cn('prose prose-sm dark:prose-invert max-w-none prose-pre:p-0 prose-pre:bg-transparent prose-code:before:content-none prose-code:after:content-none', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { languages: { javascript, typescript, python, json, xml, css, bash, sql, java, cpp, csharp, go, rust, yaml, markdown } }]]}
         components={components}
       >
         {content}

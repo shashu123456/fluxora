@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
 import {
   Folder,
   File,
@@ -21,13 +21,13 @@ import {
   X,
   FolderOpen,
   Brain,
+  MoreHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -54,6 +54,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn, formatBytes, copyToClipboard, formatRelativeTime } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useUIStore } from '@/stores/uiStore'
 import { CodingAgent } from './CodingAgent'
 import { WorkspaceIntelligence } from './WorkspaceIntelligence'
 import { ProjectBrain } from './ProjectBrain'
@@ -83,7 +84,7 @@ interface FileTreeNodeProps {
   selectedPath: string | null
 }
 
-function FileTreeNode({ entry, depth, onFileClick, onRename, onDelete, selectedPath }: FileTreeNodeProps) {
+function FileTreeNodeBase({ entry, depth, onFileClick, onRename, onDelete, selectedPath }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -173,12 +174,14 @@ function FileTreeNode({ entry, depth, onFileClick, onRename, onDelete, selectedP
   )
 }
 
+const FileTreeNode = memo(FileTreeNodeBase)
+
 interface FilePreviewProps {
   filePath: string
   onAttach?: (file: { path: string; name: string; content: string }) => void
 }
 
-function FilePreview({ filePath, onAttach }: FilePreviewProps) {
+function FilePreviewBase({ filePath, onAttach }: FilePreviewProps) {
   const [content, setContent] = useState<string | null>(null)
   const [imageData, setImageData] = useState<string | null>(null)
   const [pdfInfo, setPdfInfo] = useState<{ text: string; pageCount: number } | null>(null)
@@ -206,22 +209,24 @@ function FilePreview({ filePath, onAttach }: FilePreviewProps) {
           const pdf = await window.api.tools.readPdf(filePath)
           if (!cancelled) setPdfInfo(pdf)
         } else {
-          const text = await window.api.workspace.readFile(filePath)
+          const res: any = await window.api.workspace.readFile(filePath)
           if (!cancelled) {
-            if (typeof text === 'object' && text.base64) {
+            if (!res || res.error) {
+              setContent(res?.error ? `Error: ${res.error}` : 'No preview available')
+            } else if (res.base64) {
               setContent(`[Binary file: ${detected.mimeType || 'unknown'}]`)
-            } else if (typeof text === 'string') {
+            } else {
+              const text: string = res.content || ''
               const ext = fileName.split('.').pop()?.toLowerCase()
+              let body = text
               if (ext === 'json') {
                 try {
-                  const parsed = JSON.parse(text)
-                  setContent(JSON.stringify(parsed, null, 2))
+                  body = JSON.stringify(JSON.parse(text), null, 2)
                 } catch {
-                  setContent(text)
+                  body = text
                 }
-              } else {
-                setContent(text)
               }
+              setContent(res.truncated ? `${body}\n\n… (file truncated for preview)` : body)
             }
           }
         }
@@ -315,24 +320,99 @@ function FilePreview({ filePath, onAttach }: FilePreviewProps) {
   )
 }
 
+const FilePreview = memo(FilePreviewBase)
+
+interface NewWorkspaceDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onBrowse: () => void
+}
+
+/**
+ * Single source of truth for the "New Workspace" form. Previously this markup
+ * was duplicated in two places (the empty state and the toolbar), which meant
+ * a change to one copy silently drifted from the other.
+ */
+function NewWorkspaceDialog({ open, onOpenChange, onBrowse }: NewWorkspaceDialogProps) {
+  const createWorkspace = useWorkspaceStore((s) => s.createWorkspace)
+  const [name, setName] = useState('')
+  const [path, setPath] = useState('')
+
+  const handleCreate = async () => {
+    if (!name.trim()) return
+    await createWorkspace(name.trim(), path.trim() || undefined)
+    setName('')
+    setPath('')
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New Workspace</DialogTitle>
+          <DialogDescription>Create a workspace to organize your project.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ws-name">Name</Label>
+            <Input
+              id="ws-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Project"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ws-path">Folder path (optional)</Label>
+            <div className="flex gap-2">
+              <Input
+                id="ws-path"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="C:\projects\my-app"
+                className="flex-1"
+              />
+              <Button variant="outline" size="sm" onClick={onBrowse}>
+                Browse
+              </Button>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button onClick={handleCreate} disabled={!name.trim()}>
+            Create
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function WorkspaceView() {
   const {
     workspaces,
     currentWorkspace,
     selectWorkspace,
     openFolder,
-    createWorkspace,
     updateWorkspace,
     deleteWorkspace,
+    panel,
+    setPanel,
+    pendingFile,
+    setPendingFile,
   } = useWorkspaceStore()
+  const setPendingAttachment = useUIStore((s) => s.setPendingAttachment)
+  const setActiveTab = useUIStore((s) => s.setActiveTab)
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showNewDialog, setShowNewDialog] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newPath, setNewPath] = useState('')
   const [renamingEntry, setRenamingEntry] = useState<FileEntry | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [deletingEntry, setDeletingEntry] = useState<FileEntry | null>(null)
@@ -344,6 +424,13 @@ export function WorkspaceView() {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   const refreshSidebar = () => setSidebarKey((k) => k + 1)
+
+  // Deep-link target coming from global search / command palette.
+  useEffect(() => {
+    if (!pendingFile) return
+    setSelectedFile(pendingFile)
+    setPendingFile(null)
+  }, [pendingFile, setPendingFile])
 
   useEffect(() => {
     if (currentWorkspace?.path && searchQuery.trim()) {
@@ -366,14 +453,6 @@ export function WorkspaceView() {
       setSearchResults([])
     }
   }, [searchQuery, currentWorkspace])
-
-  const handleCreateWorkspace = async () => {
-    if (!newName.trim()) return
-    await createWorkspace(newName.trim(), newPath.trim() || undefined)
-    setNewName('')
-    setNewPath('')
-    setShowNewDialog(false)
-  }
 
   const handleOpenFolder = async () => {
     await openFolder()
@@ -444,44 +523,80 @@ export function WorkspaceView() {
     setShowCreateDialog(false)
   }
 
-  const handleAttach = (file: { path: string; name: string; content: string }) => {
-    window.dispatchEvent(new CustomEvent('workspace:attach', { detail: file }))
-  }
+  const handleAttach = useCallback(
+    (file: { path: string; name: string; content: string }) => {
+      setPendingAttachment(file)
+      setActiveTab('chat')
+    },
+    [setPendingAttachment, setActiveTab]
+  )
+
+  const handleFileClick = useCallback((e: FileEntry) => {
+    setSelectedFile(e.path)
+    try {
+      void window.api?.developer?.track('file_opened', {
+        key: e.path,
+        value: e.name,
+        workspaceId: currentWorkspace?.id,
+      })
+    } catch {
+      /* tracking is best-effort */
+    }
+  }, [currentWorkspace?.id])
+  const handleTreeRename = useCallback((e: FileEntry) => {
+    setIsWorkspaceAction(false)
+    setRenamingEntry(e)
+    setRenameValue(e.name)
+  }, [])
+  const handleTreeDelete = useCallback((e: FileEntry) => {
+    setIsWorkspaceAction(false)
+    setDeletingEntry(e)
+  }, [])
+  const rootEntry = useMemo<FileEntry | null>(() => {
+    if (!currentWorkspace?.path) return null
+    return {
+      name: currentWorkspace.name,
+      path: currentWorkspace.path,
+      type: 'directory',
+      size: 0,
+      modifiedAt: 0,
+    }
+  }, [currentWorkspace?.name, currentWorkspace?.path])
 
   if (!currentWorkspace) {
     return (
       <div className="flex h-full flex-col">
-        <div className="flex h-full flex-col items-center justify-center gap-6">
+        <div className="fx-empty h-full gap-7 py-0">
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
-              <Folders className="h-8 w-8 text-muted-foreground" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-fx-gold/10 ring-1 ring-fx-gold/20">
+              <Folders className="h-7 w-7 text-fx-gold" />
             </div>
-            <h2 className="text-xl font-semibold">Open a folder to get started</h2>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              Open a project folder to browse files, run terminal commands, and manage your code.
+            <h2 className="fx-title">Open a folder to get started</h2>
+            <p className="fx-prose-lead max-w-sm text-center">
+              Browse files, run commands and keep your code beside the conversation.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <Button onClick={handleOpenFolder} className="gap-2">
               <FolderOpen className="h-4 w-4" />
-              Open Folder
+              Open folder
             </Button>
             <Button variant="outline" onClick={() => setShowNewDialog(true)} className="gap-2">
               <Plus className="h-4 w-4" />
-              New Workspace
+              New workspace
             </Button>
           </div>
           {workspaces.length > 0 && (
-            <div className="mt-4 flex flex-col items-center gap-2">
-              <span className="text-xs text-muted-foreground">Recent workspaces</span>
-              <div className="flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-col items-center gap-2.5">
+              <span className="fx-label">Recent workspaces</span>
+              <div className="flex flex-wrap justify-center gap-2">
                 {workspaces.map((ws) => (
                   <Button
                     key={ws.id}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     onClick={() => selectWorkspace(ws.id)}
-                    className="gap-1.5"
+                    className="gap-1.5 text-muted-foreground"
                   >
                     <Folder className="h-3.5 w-3.5" />
                     {ws.name}
@@ -491,63 +606,22 @@ export function WorkspaceView() {
             </div>
           )}
         </div>
-        <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>New Workspace</DialogTitle>
-              <DialogDescription>Create a workspace to organize your project.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="ws-name">Name</Label>
-                <Input
-                  id="ws-name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="My Project"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ws-path">Folder path (optional)</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="ws-path"
-                    value={newPath}
-                    onChange={(e) => setNewPath(e.target.value)}
-                    placeholder="C:\projects\my-app"
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="sm" onClick={handleOpenFolder}>
-                    Browse
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleCreateWorkspace} disabled={!newName.trim()}>
-                Create
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <NewWorkspaceDialog open={showNewDialog} onOpenChange={setShowNewDialog} onBrowse={handleOpenFolder} />
       </div>
     )
   }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b px-4 py-2">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 px-4">
         <Select
           value={currentWorkspace.id}
           onValueChange={(v) => selectWorkspace(v)}
         >
-          <SelectTrigger className="h-8 w-[200px]">
+          <SelectTrigger className="h-8 w-[190px] border-transparent bg-transparent shadow-none hover:bg-accent/50 focus:ring-0">
             <SelectValue>
-              <div className="flex items-center gap-1.5">
-                <Folder className="h-3.5 w-3.5" />
+              <div className="flex items-center gap-1.5 text-[13px] font-medium">
+                <Folder className="h-3.5 w-3.5 text-muted-foreground" />
                 {currentWorkspace.name}
               </div>
             </SelectValue>
@@ -564,22 +638,21 @@ export function WorkspaceView() {
           </SelectContent>
         </Select>
 
-        <Button variant="outline" size="sm" onClick={handleOpenFolder} className="gap-1.5">
+        <div className="mx-1 h-4 w-px bg-border/60" />
+
+        <Button variant="ghost" size="sm" onClick={handleOpenFolder} className="gap-1.5 text-muted-foreground">
           <FolderOpen className="h-3.5 w-3.5" />
-          Open Folder
+          Open folder
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setShowNewDialog(true)} className="gap-1.5">
+        <Button variant="ghost" size="sm" onClick={() => setShowNewDialog(true)} className="gap-1.5 text-muted-foreground">
           <Plus className="h-3.5 w-3.5" />
           New
         </Button>
 
-        <Separator orientation="vertical" className="mx-1 h-5" />
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-1.5">
-              {currentWorkspace.name}
-              <ChevronRight className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" aria-label="Workspace options">
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-48">
@@ -598,19 +671,19 @@ export function WorkspaceView() {
               }}
               className="text-destructive"
             >
-              <Trash2 className="h-3.5 w-3.5" /> Delete Workspace
+              <Trash2 className="h-3.5 w-3.5" /> Delete workspace
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         {currentWorkspace.path && (
-          <span className="ml-auto truncate text-xs text-muted-foreground">
+          <span className="fx-meta ml-auto truncate font-mono text-[10px] text-muted-foreground/70">
             {currentWorkspace.path}
           </span>
         )}
       </div>
 
-      <Tabs defaultValue="explorer" className="flex flex-1 overflow-hidden">
+      <Tabs value={panel} onValueChange={(v) => setPanel(v as any)} className="flex flex-1 overflow-hidden">
         <TabsList className="mx-4 mt-2 w-fit">
           <TabsTrigger value="explorer" className="gap-1.5">
             <Folders className="h-3.5 w-3.5" />
@@ -706,17 +779,11 @@ export function WorkspaceView() {
                   ) : (
                     <div className="p-1" key={sidebarKey}>
                       <FileTreeNode
-                        entry={{
-                          name: currentWorkspace.name,
-                          path: currentWorkspace.path!,
-                          type: 'directory',
-                          size: 0,
-                          modifiedAt: 0,
-                        }}
+                        entry={rootEntry!}
                         depth={0}
-                        onFileClick={(e) => setSelectedFile(e.path)}
-                        onRename={(e) => { setIsWorkspaceAction(false); setRenamingEntry(e); setRenameValue(e.name) }}
-                        onDelete={(e) => { setIsWorkspaceAction(false); setDeletingEntry(e) }}
+                        onFileClick={handleFileClick}
+                        onRename={handleTreeRename}
+                        onDelete={handleTreeDelete}
                         selectedPath={selectedFile}
                       />
                     </div>
@@ -744,7 +811,7 @@ export function WorkspaceView() {
 
         <TabsContent value="terminal-git" className="mt-0 flex-1 overflow-hidden px-4 pb-4">
           {currentWorkspace.path ? (
-            <CodingAgent cwd={currentWorkspace.path} />
+            <CodingAgent cwd={currentWorkspace.path} workspaceId={currentWorkspace.id} onUseInChat={handleAttach as any} />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <GitBranch className="h-10 w-10 text-muted-foreground/30" />
@@ -762,48 +829,7 @@ export function WorkspaceView() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New Workspace</DialogTitle>
-            <DialogDescription>Create a workspace to organize your project.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="ws-name-new">Name</Label>
-              <Input
-                id="ws-name-new"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="My Project"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ws-path-new">Folder path (optional)</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="ws-path-new"
-                  value={newPath}
-                  onChange={(e) => setNewPath(e.target.value)}
-                  placeholder="C:\projects\my-app"
-                  className="flex-1"
-                />
-                <Button variant="outline" size="sm" onClick={handleOpenFolder}>
-                  Browse
-                </Button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button onClick={handleCreateWorkspace} disabled={!newName.trim()}>
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NewWorkspaceDialog open={showNewDialog} onOpenChange={setShowNewDialog} onBrowse={handleOpenFolder} />
 
       <Dialog open={!!renamingEntry} onOpenChange={(open) => { if (!open) { setRenamingEntry(null); setIsWorkspaceAction(false) } }}>
         <DialogContent>

@@ -23,6 +23,16 @@ export default defineConfig({
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
           'state-vendor': ['zustand'],
+          'markdown-vendor': ['react-markdown', 'remark-gfm'],
+          'highlight-vendor': ['highlight.js'],
+          'radix-vendor': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-select',
+            '@radix-ui/react-popover',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-tooltip',
+          ],
         },
       },
     },

@@ -2,12 +2,14 @@ import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron'
 import { randomUUID } from 'crypto'
 import { get } from '../database'
 import { streamChat, completeChat, getProviderById } from '../services/ai'
-import { ModelConfig, TokenUsage, AIMessageParam } from '../../src/types'
+import { ModelConfig, TokenUsage, AIMessageParam, ProviderConfig } from '../../src/types'
 import { getDataDir } from '../config'
 import { getWorkspaceSettings } from './workspace'
 import path from 'path'
 import fs from 'fs'
-import { spawn } from 'child_process'
+import { runTerminalCommand, cancelTerminalRun, listRunningCommands } from '../services/terminal/process'
+import { getTerminalContext, getTerminalRecommendations } from '../services/terminal/insights'
+import { getSecretManager } from '../services/secrets/manager'
 
 const activeStreams = new Map<string, AbortController>()
 let mainWindowRef: BrowserWindow | null = null
@@ -86,6 +88,12 @@ export function registerSystemIpc() {
   ipcMain.handle('window:is-maximized', (e) => BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false)
 
   ipcMain.on('shell:show-item', (_e, p: string) => {
+    if (typeof p !== 'string' || !p.trim()) return
+    try {
+      if (!fs.existsSync(p)) return
+    } catch {
+      return
+    }
     shell.showItemInFolder(p)
   })
   ipcMain.on('shell:open-external', (_e, url: string) => {
@@ -213,19 +221,23 @@ export function registerSystemIpc() {
     const { providerId, modelId, messages, temperature, maxTokens } = payload
     const provider = await getProviderById(providerId)
     if (!provider) throw new Error('Provider not found')
-    const model = provider.models.find((m: any) => m.id === modelId)
-    if (!model) throw new Error(`Model ${modelId} not found`)
+    const model = provider.models.find((m: ModelConfig) => m.id === modelId)
+    if (!model) throw new Error('Model not found')
     sqliteBackupMiddleware(provider)
-    const result = await completeChat(provider, model, messages, { temperature, maxTokens })
+    const secretManager = getSecretManager()
+    const result = await secretManager.withProviderSecret(providerId, async (secret) => {
+      const p = { ...provider, apiKey: secret || provider.apiKey || '' }
+      return await completeChat(p, model, messages, { temperature, maxTokens })
+    })
     return result
   })
 
   ipcMain.handle('ai:auto-route', async (_e, payload: any) => {
-    const { message, usage, workspaceId } = payload
+    const { message, workspaceId } = payload
     const { all } = await import('../database')
     const rows = await all<any>('SELECT * FROM providers WHERE enabled = 1')
     const providers = rows.map((r: any) => ({
-      id: r.id, name: r.name, type: r.type, baseUrl: r.base_url, apiKey: r.api_key,
+      id: r.id, name: r.name, type: r.type, baseUrl: r.base_url, apiKey: '',
       models: JSON.parse(r.models || '[]'), enabled: !!r.enabled, isCustom: !!r.is_custom,
       color: r.color, createdAt: r.created_at, updatedAt: r.updated_at,
     }))
@@ -246,10 +258,32 @@ export function registerSystemIpc() {
       }
     }
 
+    // Spend-weighted routing: the main process owns the usage aggregate so the
+    // renderer never has to ship a usage map with every request.
+    let usage: Record<string, { totalTokens: number; cost: number }> = {}
+    try {
+      const usageRows = await all<any>(
+        'SELECT provider_id as providerId, SUM(total_tokens) as totalTokens, SUM(cost) as cost FROM usage GROUP BY provider_id'
+      )
+      for (const r of usageRows) {
+        usage[r.providerId] = { totalTokens: r.totalTokens || 0, cost: r.cost || 0 }
+      }
+    } catch { /* usage unavailable */ }
+
+    // Favourite models nudge routing toward the models the user already prefers.
+    let favourites: Record<string, string> = {}
+    try {
+      const row = await get<any>("SELECT value FROM settings WHERE key = 'favorite_models'")
+      if (row?.value) {
+        const parsed = JSON.parse(row.value)
+        if (parsed && typeof parsed === 'object') favourites = parsed
+      }
+    } catch { /* favourites unavailable */ }
+
     const needsVision = containsImageHint(message)
-    const scorer = providers.map((p: any) => {
-      let score = Math.random() * 0.3
-      const pUsage = usage?.[p.id]
+    const scorer = providers.map((p: any, order: number) => {
+      let score = 0
+      const pUsage = usage[p.id]
       if (pUsage) {
         score -= Math.min((pUsage.totalTokens || 0) / 2000000, 0.3)
       }
@@ -258,12 +292,39 @@ export function registerSystemIpc() {
       if (needsVision) {
         score += p.models.some((m: ModelConfig) => m.supportsVision) ? 2 : -2
       }
+      if (favourites[p.id]) score += 0.25
+      // Deterministic tie-break keeps routing stable across identical requests.
+      score -= order * 0.0001
       return { provider: p, score }
     })
     scorer.sort((a: any, b: any) => b.score - a.score)
     const chosen = scorer[0]
-    const model = chosen.provider.models[0]
+    const favouriteModel = favourites[chosen.provider.id]
+    const model =
+      (favouriteModel && chosen.provider.models.find((m: any) => m.id === favouriteModel)) ||
+      chosen.provider.models[0]
     return { providerId: chosen.provider.id, modelId: model?.id }
+  })
+
+  ipcMain.handle('ai:recommend', async (_e, payload: any) => {
+    const { task, workspaceId } = payload
+    const { all } = await import('../database')
+    const rows = await all<any>('SELECT * FROM providers WHERE enabled = 1')
+    const providers: ProviderConfig[] = rows.map((r: any) => ({
+      id: r.id, name: r.name, type: r.type, baseUrl: r.base_url, apiKey: r.api_key,
+      models: JSON.parse(r.models || '[]'), enabled: !!r.enabled, isCustom: !!r.is_custom,
+      color: r.color, capabilities: r.capabilities ? JSON.parse(r.capabilities) : undefined,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    }))
+    let index = null
+    if (workspaceId && workspaceId !== 'global') {
+      try {
+        const idxRow = await get<any>('SELECT data FROM workspace_index WHERE workspace_id = ?', [workspaceId])
+        index = idxRow?.data ? JSON.parse(idxRow.data) : null
+      } catch { /* no index */ }
+    }
+    const { recommend } = await import('../services/ai/orchestrate')
+    return recommend({ task: task || '', providers, index })
   })
 
   ipcMain.on('ai:stream-chat', async (e, payload: any) => {
@@ -282,7 +343,10 @@ export function registerSystemIpc() {
       const model = provider.models.find((m: any) => m.id === modelId)
       if (!model) throw new Error(`Model ${modelId} not found`)
 
-      await streamChat(provider, model, messages, {
+      const secretManager = getSecretManager()
+      await secretManager.withProviderSecret(providerId, async (secret) => {
+        const p = { ...provider, apiKey: secret || provider.apiKey || '' }
+        await streamChat(p, model, messages, {
         onChunk: (text) => {
           accumulatedText += text
           if (!sender.isDestroyed()) {
@@ -332,6 +396,7 @@ export function registerSystemIpc() {
         },
         signal: controller.signal,
       }, { temperature, maxTokens })
+      })
     } catch (err: any) {
       activeStreams.delete(requestId)
       if (!sender.isDestroyed()) {
@@ -348,75 +413,41 @@ export function registerSystemIpc() {
     }
   })
 
-  ipcMain.handle('terminal:run', async (_e, workspaceId: string, command: string, cwd: string, approved?: boolean) => {
-    const { all, run } = await import('../database')
-    const startedAt = Date.now()
-
-    let approvedBy: string | null = null
-    const reason = blockedCommandReason(command)
-    if (reason) {
-      const allowlist = await getTerminalAllowlist(all)
-      const isAllowlisted = allowlist.some((p) => command.trim().toLowerCase().startsWith(p.toLowerCase()))
-      if (isAllowlisted) {
-        approvedBy = 'allowlist'
-      } else if (approved) {
-        approvedBy = 'user'
-      } else {
-        return { needsApproval: true, command, reason }
-      }
-    }
-
-    return new Promise((resolve) => {
-      const isWindows = process.platform === 'win32'
-      const useCmd = isWindows
-      const shellBin = isWindows ? 'cmd.exe' : '/bin/bash'
-      const args = useCmd ? ['/c', command] : ['-c', command]
-      const child = spawn(shellBin, args, {
-        cwd,
-        shell: false,
-        env: { ...process.env },
-        windowsHide: true,
-      })
-      let stdout = ''
-      let stderr = ''
-      let timedOut = false
-      const timeoutMs = 60000
-      const timer = setTimeout(() => {
-        timedOut = true
-        child.kill('SIGKILL')
-      }, timeoutMs)
-
-      child.stdout.on('data', (d) => { stdout += d.toString() })
-      child.stderr.on('data', (d) => { stderr += d.toString() })
-
-      child.on('error', (err) => {
-        clearTimeout(timer)
-        resolve({
-          exitCode: 1,
-          output: `Failed to run command: ${err.message}`,
-          durationMs: Date.now() - startedAt,
-        })
-      })
-
-      child.on('close', async (code) => {
-        clearTimeout(timer)
-        const output = `${stdout}${stderr ? (stdout ? '\n' : '') + stderr : ''}${timedOut ? '\n[Command timed out after 60s]' : ''}`
-        const result = {
-          exitCode: code,
-          output: output || '(no output)',
-          durationMs: Date.now() - startedAt,
-        }
-        try {
-          const { run } = await import('../database')
-          await run(
-            'INSERT INTO terminal_history (id, workspace_id, command, output, exit_code, cwd, created_at, duration_ms, approved_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [randomUUID(), workspaceId, command, output.slice(0, 50000), code, cwd, Date.now(), result.durationMs, approvedBy]
-          )
-        } catch {}
-        resolve(result)
-      })
-    })
+  ipcMain.handle('terminal:run', async (_e, payload: any, legacyCommand?: string, legacyCwd?: string) => {
+    const request =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? {
+            workspaceId: payload.workspaceId,
+            command: payload.command,
+            cwd: payload.cwd,
+            timeoutMs: payload.timeoutMs,
+          }
+        : { workspaceId: payload, command: legacyCommand, cwd: legacyCwd }
+    return runTerminalCommand(request)
   })
+
+  ipcMain.handle('terminal:cancel', async (_e, runId: string) => cancelTerminalRun(runId))
+
+  ipcMain.handle('terminal:activity', async (_e, workspaceId?: string) => {
+    const { all } = await import('../database')
+    const rows = workspaceId
+      ? await all<any>(
+          `SELECT * FROM terminal_history WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 12`,
+          [workspaceId]
+        )
+      : await all<any>(`SELECT * FROM terminal_history ORDER BY created_at DESC LIMIT 12`)
+    return {
+      running: listRunningCommands(),
+      recent: rows.map(mapTerminalHistoryRow),
+      generatedAt: Date.now(),
+    }
+  })
+
+  ipcMain.handle('terminal:context', async (_e, workspaceId: string) => getTerminalContext(workspaceId))
+
+  ipcMain.handle('terminal:recommendations', async (_e, workspaceId: string) =>
+    getTerminalRecommendations(workspaceId)
+  )
 
   ipcMain.handle('terminal:history', async (_e, workspaceId: string) => {
     const { all } = await import('../database')
@@ -424,11 +455,7 @@ export function registerSystemIpc() {
       'SELECT * FROM terminal_history WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 200',
       [workspaceId]
     )
-    return rows.map((r) => ({
-      id: r.id, workspaceId: r.workspace_id, command: r.command, output: r.output,
-      exitCode: r.exit_code, cwd: r.cwd, createdAt: r.created_at, durationMs: r.duration_ms,
-      approvedBy: r.approved_by,
-    }))
+    return rows.map(mapTerminalHistoryRow)
   })
 
   ipcMain.handle('git:status', async (_e, cwd: string) => {
@@ -478,21 +505,25 @@ export function registerSystemIpc() {
 
   ipcMain.handle('backup:restore', async (_e, backupPath: string) => {
     const { restoreBackup } = require('../database/backup') as typeof import('../database/backup')
-    await restoreBackup(backupPath)
-    return true
+    const result = await restoreBackup(backupPath)
+    setTimeout(() => {
+      app.relaunch()
+      app.exit(0)
+    }, 250)
+    return { ok: true, ...result, relaunching: true }
   })
 
   ipcMain.handle('backup:export-file', async (_e) => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showSaveDialog(win!, {
       title: 'Export Database Backup',
-      defaultPath: path.join(getDataDir(), `ai-workspace-${Date.now()}.db`),
+      defaultPath: path.join(getDataDir(), `fluxora-${Date.now()}.db`),
       filters: [{ name: 'Database', extensions: ['db'] }],
     })
     if (result.canceled || !result.filePath) return null
     const { exportDatabase } = require('../database/backup') as typeof import('../database/backup')
-    await exportDatabase(result.filePath)
-    return result.filePath
+    const manifest = await exportDatabase(result.filePath)
+    return { path: result.filePath, manifest }
   })
 
   ipcMain.handle('backup:import-file', async (_e) => {
@@ -504,9 +535,13 @@ export function registerSystemIpc() {
     })
     if (result.canceled || !result.filePaths[0]) return null
     const { importDatabase } = require('../database/backup') as typeof import('../database/backup')
-    await importDatabase(result.filePaths[0])
-    sendNotification('Restore Complete', 'Database restored from backup. Please restart the app.', 'warning')
-    return result.filePaths[0]
+    const preRestorePath = await importDatabase(result.filePaths[0])
+    sendNotification('Restore Complete', 'Database restored from backup. Relaunching…', 'warning')
+    setTimeout(() => {
+      app.relaunch()
+      app.exit(0)
+    }, 250)
+    return { ok: true, path: result.filePaths[0], preRestorePath, relaunching: true }
   })
 
   ipcMain.handle('backup:get-settings', async () => {
@@ -575,36 +610,28 @@ async function buildMemoryContext(workspaceId: string, messages: AIMessageParam[
   }
 }
 
-const BLOCKED_PATTERNS: Array<{ re: RegExp; label: string }> = [
-  { re: /rm\s+-(?:[a-z]*[rf][a-z]*)/i, label: 'recursive force delete (rm -r/-f)' },
-  { re: /(?:rd|rmdir)\s+\/s(?:[^&|]*)?/i, label: 'recursive directory delete (rd /s)' },
-  { re: /(?:del|erase|delthread)\s+\/[a-z]*[s][a-z]*/i, label: 'recursive file delete (del /s)' },
-  { re: /del\s+\/f(?:\s|$)/i, label: 'force file delete (del /f)' },
-  { re: /git\s+push\s+.*(--force|-f)(?:\s|$)/i, label: 'force push (git push --force)' },
-  { re: /git\s+reset\s+--hard/i, label: 'git reset --hard' },
-  { re: /drop\s+(table|database)/i, label: 'drop table/database' },
-  { re: /format\s+[a-z]:/i, label: 'disk format' },
-  { re: /diskpart/i, label: 'diskpart' },
-  { re: /^shutdown(?:\s|$)/i, label: 'system shutdown' },
-  { re: /reg\s+delete/i, label: 'registry delete' },
-  { re: /taskkill\s+\/f/i, label: 'force task kill' },
-  { re: /pkexec\s+rm\s/i, label: 'privileged delete' },
-]
-
-function blockedCommandReason(command: string): string | null {
-  for (const { re, label } of BLOCKED_PATTERNS) {
-    if (re.test(command)) return label
-  }
-  return null
-}
-
-async function getTerminalAllowlist(all: any): Promise<string[]> {
-  try {
-    const row = await all("SELECT value FROM settings WHERE key = 'terminal.allowlist' LIMIT 1")
-    if (!row?.[0]?.value) return []
-    const parsed = JSON.parse(row[0].value)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
+function mapTerminalHistoryRow(row: any) {
+  const status =
+    row.status ||
+    (row.exit_code === 0 ? 'success' : row.exit_code === null || row.exit_code === undefined ? 'failed' : 'failed')
+  return {
+    id: row.id,
+    runId: row.id,
+    workspaceId: row.workspace_id,
+    command: row.command,
+    output: row.output,
+    exitCode: row.exit_code,
+    cwd: row.cwd,
+    createdAt: row.created_at,
+    startedAt: row.created_at,
+    finishedAt: row.finished_at ?? null,
+    durationMs: row.duration_ms,
+    approvedBy: row.approved_by,
+    commandHash: row.command_hash,
+    approvalId: row.approval_id,
+    status,
+    outputSize: row.output_size || 0,
+    truncated: Boolean(row.truncated),
+    cancelled: Boolean(row.cancelled),
   }
 }

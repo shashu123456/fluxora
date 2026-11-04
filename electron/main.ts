@@ -3,7 +3,8 @@ import path from 'path'
 import fs from 'fs'
 import { initDatabase, closeDatabase, getDb } from './database'
 import { registerChatIpc } from './ipc/chat'
-import { registerProviderIpc, migrateLegacyProviderKeys } from './ipc/providers'
+import { registerProviderIpc } from './ipc/providers'
+import { migrateLegacyProviderSecrets } from './services/secrets/migration'
 import { registerMemoryIpc } from './ipc/memory'
 import { registerBrainIpc } from './ipc/brain'
 import { registerWorkspaceIpc } from './ipc/workspace'
@@ -13,11 +14,57 @@ import { registerSettingsIpc } from './ipc/settings'
 import { registerUsageIpc } from './ipc/usage'
 import { registerSearchIpc } from './ipc/search'
 import { registerWorkspaceIndexIpc } from './ipc/workspaceIndex'
+import { startSessionTracking, stopSessionTracking } from './services/developer/sessions'
+import { registerIntelligenceIpc } from './ipc/intelligence'
+import { registerDeveloperIpc } from './ipc/developer'
 import { registerSystemIpc, setMainWindow } from './ipc/system'
 import { ensureDataDir, getDataDir, isPortableMode, PORTABLE_DIR } from './config'
 import { startAutoBackup, stopAutoBackup } from './database/backup'
 import { loadWindowState, saveWindowState } from './window-state'
 import { syncBuiltinProvidersToPresets } from './services/ai'
+import { PRODUCTION_CSP, isAllowedExternalProtocol } from './security-policy'
+
+function applySecurityHeaders() {
+  const session = require('electron').session.defaultSession
+  session.webRequest.onHeadersReceived((details: any, callback: (response: any) => void) => {
+    const isDev = !!process.env.VITE_DEV_SERVER_URL
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': isDev
+          ? ["default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' ws: http: https:; object-src 'none'"]
+          : [PRODUCTION_CSP],
+        'X-Content-Type-Options': ['nosniff'],
+      },
+    })
+  })
+}
+
+function hardenWebContents(contents: Electron.WebContents) {
+  contents.on('will-navigate', (event, url) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL
+    if (devUrl && url.startsWith(devUrl)) return
+    event.preventDefault()
+    try {
+      const parsed = new URL(url)
+      if (isAllowedExternalProtocol(parsed.protocol)) shell.openExternal(url)
+    } catch {
+      // ignore malformed navigation targets
+    }
+  })
+  contents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url)
+      if (isAllowedExternalProtocol(parsed.protocol)) shell.openExternal(url)
+    } catch {
+      // ignore malformed popup targets
+    }
+    return { action: 'deny' }
+  })
+  contents.on('will-attach-webview', (event) => {
+    event.preventDefault()
+  })
+}
 
 let mainWindow: BrowserWindow | null = null
 let splashWindow: BrowserWindow | null = null
@@ -43,6 +90,7 @@ function showSplash() {
         sandbox: true,
       },
     })
+    hardenWebContents(splashWindow.webContents)
     splashWindow.once('ready-to-show', () => splashWindow?.show())
     if (process.env.VITE_DEV_SERVER_URL) {
       splashWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}/splash.html`)
@@ -143,6 +191,7 @@ function createWindow() {
     },
   })
   setMainWindow(mainWindow)
+  hardenWebContents(mainWindow.webContents)
 
   mainWindow.once('ready-to-show', () => {
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close()
@@ -155,11 +204,6 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'))
   }
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
-    return { action: 'deny' }
-  })
 
   mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription) => {
     if (errorCode === -3) return // aborted: user navigated away
@@ -202,12 +246,29 @@ function createWindow() {
   })
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    } else {
+      createWindow()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return
+  applySecurityHeaders()
   showSplash()
 
   try {
-    initDatabase()
-    await migrateLegacyProviderKeys()
+    await initDatabase()
+    await migrateLegacyProviderSecrets()
     await syncBuiltinProvidersToPresets()
     startAutoBackup()
   } catch (e) {
@@ -227,7 +288,10 @@ app.whenReady().then(async () => {
     registerUsageIpc()
     registerSearchIpc()
     registerWorkspaceIndexIpc()
+    registerIntelligenceIpc()
+    registerDeveloperIpc()
     registerSystemIpc()
+    void startSessionTracking()
   } catch (e) {
     showFatalDialog('Startup error', `Could not register application services.\n\n${e instanceof Error ? e.message : String(e)}`)
     return
@@ -249,11 +313,21 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+let quitting = false
+
+app.on('before-quit', (event) => {
+  if (quitting) return
+  quitting = true
+  event.preventDefault()
   stopAutoBackup()
-  try {
-    closeDatabase()
-  } catch (e) {
-    console.error('Error closing database', e)
-  }
+  void stopSessionTracking()
+    .catch(() => {})
+    .finally(async () => {
+      try {
+        await closeDatabase()
+      } catch (e) {
+        console.error('Error closing database', e)
+      }
+      app.quit()
+    })
 })

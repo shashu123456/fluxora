@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ProviderConfig, ModelConfig } from '../types'
-import { useSettingsStore } from './settingsStore'
+import { useSettingsStore, patchSettings } from './settingsStore'
 
 export interface ProviderStore {
   providers: ProviderConfig[]
@@ -13,13 +13,11 @@ export interface ProviderStore {
   createProvider: (data: Partial<ProviderConfig>) => Promise<ProviderConfig | null>
   updateProvider: (id: string, data: Partial<ProviderConfig>) => Promise<ProviderConfig | null>
   deleteProvider: (id: string) => Promise<void>
-  setSelectedProvider: (id: string | null) => void
   testConnection: (id: string) => Promise<boolean>
   ensureDefaults: () => Promise<void>
   refreshModels: (id: string) => Promise<ModelConfig[]>
   restoreLastProvider: () => void
   toggleModelFavorite: (providerId: string, modelId: string) => Promise<void>
-  isModelFavorite: (providerId: string, modelId: string) => boolean
 }
 
 export const useProviderStore = create<ProviderStore>((set, get) => ({
@@ -36,7 +34,7 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
       let favoriteModels: Record<string, string> = {}
       try {
         const settings: any = await window.api.settings.get()
-        const raw = settings.favorite_models
+        const raw = settings?.favoriteModels
         if (raw && typeof raw === 'string') favoriteModels = JSON.parse(raw)
         else if (raw && typeof raw === 'object') favoriteModels = raw
       } catch {
@@ -53,15 +51,8 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
     if (current[providerId] === modelId) delete current[providerId]
     else current[providerId] = modelId
     set({ favoriteModels: current })
-    try {
-      const settings: any = await window.api.settings.get()
-      await window.api.settings.update({ ...settings, favorite_models: JSON.stringify(current) })
-    } catch {
-      /* best-effort persistence */
-    }
+    patchSettings({ favoriteModels: current })
   },
-
-  isModelFavorite: (providerId, modelId) => get().favoriteModels[providerId] === modelId,
 
   createProvider: async (data) => {
     const provider = await window.api.providers.create(data)
@@ -89,13 +80,7 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
     }))
   },
 
-  setSelectedProvider: (id) => {
-    set({ selectedProvider: id })
-    if (id) {
-      const currentSettings = useSettingsStore.getState().settings
-      window.api.settings.update({ ...currentSettings, defaultProviderId: id }).catch(() => {})
-    }
-  },
+
 
   restoreLastProvider: () => {
     const defaultProviderId = useSettingsStore.getState().settings.defaultProviderId

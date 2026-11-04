@@ -3,6 +3,13 @@ import { randomUUID } from 'crypto'
 import { all, get, run } from '../database'
 import { MemoryEntry } from '../../src/types'
 
+const MEMORY_KEY_ALIASES: Record<string, string> = {
+  memory_enabled: 'memoryEnabled',
+  memory_memoryEnabled: 'memoryEnabled',
+  memory_autoRemember: 'autoRemember',
+  memory_autoExtract: 'autoExtract',
+}
+
 function mapRow(row: any): MemoryEntry {
   let tags: string[] | undefined
   try {
@@ -105,14 +112,27 @@ export function registerMemoryIpc() {
     return enabled
   })
 
-  ipcMain.handle('memory:settings', async () => {
-    const rows = await all<any>("SELECT * FROM settings WHERE key LIKE 'memory_%'")
+  ipcMain.handle('memory:settings', async (_e, workspaceId?: string) => {
     const result: Record<string, any> = {}
+    const rows = await all<any>("SELECT * FROM settings WHERE key LIKE 'memory_%'")
     for (const row of rows) {
+      const key = MEMORY_KEY_ALIASES[row.key] || row.key.replace(/^memory_/, '')
       try {
-        result[row.key] = JSON.parse(row.value)
+        result[key] = JSON.parse(row.value)
       } catch {
-        result[row.key] = row.value
+        result[key] = row.value
+      }
+    }
+    if (workspaceId && workspaceId !== 'global') {
+      const row = await get<any>('SELECT settings FROM workspaces WHERE id = ?', [workspaceId])
+      if (row?.settings) {
+        try {
+          const ws = JSON.parse(row.settings)
+          if (typeof ws.memoryEnabled === 'boolean') result.memoryEnabled = ws.memoryEnabled
+          if (typeof ws.autoRemember === 'boolean') result.autoRemember = ws.autoRemember
+        } catch {
+          /* malformed workspace settings are ignored */
+        }
       }
     }
     return result
@@ -150,6 +170,13 @@ export function registerMemoryIpc() {
 }
 
 async function setWorkspaceMemorySetting(workspaceId: string, key: keyof MemorySettings, value: any) {
+  if (!workspaceId || workspaceId === 'global') {
+    await run(
+      'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+      [`memory_${key}`, JSON.stringify(value), Date.now()]
+    )
+    return
+  }
   const row = await get<any>('SELECT settings FROM workspaces WHERE id = ?', [workspaceId])
   const settings = row?.settings ? JSON.parse(row.settings) : {}
   settings[key] = value

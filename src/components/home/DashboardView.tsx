@@ -1,433 +1,622 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight,
-  Sparkles,
-  Folder,
-  FolderOpen,
-  Plus,
-  Search,
-  MessageSquare,
-  Cpu,
-  Wallet,
-  Brain,
-  Pin,
-  Clock,
-  Flame,
-  Layers,
   Activity,
-  Star,
+  AlertTriangle,
+  ArrowRight,
+  BookOpen,
+  Brain,
+  Check,
   ChevronRight,
+  CircleDot,
+  Clock,
+  GitBranch,
+  Layers,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  TerminalSquare,
+  TrendingUp,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useProviderStore } from '@/stores/providerStore'
-import { useMemoryStore } from '@/stores/memoryStore'
+import { useIntelligenceStore } from '@/stores/intelligenceStore'
+import { useDeveloperStore } from '@/stores/developerStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import type { Recommendation, TimelineEvent, WorkspaceIntelligence } from '@/types/workspaceIntelligence'
+import { TerminalActivityCard } from '@/components/home/TerminalActivityCard'
 
-function greeting() {
-  const h = new Date().getHours()
-  if (h < 5) return 'Working late'
-  if (h < 12) return 'Good morning'
-  if (h < 18) return 'Good afternoon'
+const EMPTY_RECS: Recommendation[] = []
+const EMPTY_TIMELINE: TimelineEvent[] = []
+
+const RISK_LABELS: { key: keyof WorkspaceIntelligence['risks']; label: string }[] = [
+  { key: 'securityRisk', label: 'Security' },
+  { key: 'dependencyRisk', label: 'Dependencies' },
+  { key: 'maintenanceRisk', label: 'Maintenance' },
+  { key: 'architectureRisk', label: 'Architecture' },
+  { key: 'documentationRisk', label: 'Documentation' },
+  { key: 'configurationRisk', label: 'Configuration' },
+  { key: 'performanceRisk', label: 'Performance' },
+]
+
+const TIMELINE_ICON: Record<string, typeof Activity> = {
+  indexed: Layers,
+  health: Activity,
+  risk: AlertTriangle,
+  architecture: Layers,
+  documentation: BookOpen,
+  dependencies: CircleDot,
+  repository: GitBranch,
+  recommendation: Sparkles,
+  learning: Brain,
+}
+
+function greeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 5) return 'Working late'
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
   return 'Good evening'
 }
 
-const todayKey = () => new Date().toDateString()
+function scoreTone(score: number): string {
+  if (score >= 80) return 'text-emerald-400'
+  if (score >= 60) return 'text-fx-gold'
+  return 'text-amber-400'
+}
 
-export function DashboardView() {
-  const setActiveTab = useUIStore((s) => s.setActiveTab)
-  const chats = useChatStore((s) => s.chats)
-  const loadChats = useChatStore((s) => s.loadChats)
-  const setCurrentChat = useChatStore((s) => s.setCurrentChat)
-  const createChat = useChatStore((s) => s.createChat)
-  const currentChatId = useChatStore((s) => s.currentChatId)
-  const workspaces = useWorkspaceStore((s) => s.workspaces)
-  const selectWorkspace = useWorkspaceStore((s) => s.selectWorkspace)
-  const openFolder = useWorkspaceStore((s) => s.openFolder)
-  const indexes = useWorkspaceStore((s) => s.indexes)
-  const providers = useProviderStore((s) => s.providers)
-  const connectionStatuses = useProviderStore((s) => s.connectionStatuses)
-  const favoriteModels = useProviderStore((s) => s.favoriteModels)
-  const memories = useMemoryStore((s) => s.memories)
-  const loadMemories = useMemoryStore((s) => s.loadMemories)
-  const settings = useSettingsStore((s) => s.settings)
-
-  const [usage, setUsage] = useState<any>(null)
-  const [byProvider, setByProvider] = useState<any[]>([])
-  const [todayCount, setTodayCount] = useState(0)
-
-  useEffect(() => {
-    loadChats('global').catch(() => {})
-    loadMemories('global').catch(() => {})
-    window.api.usage.summary().then((s: any) => setUsage(s)).catch(() => {})
-    window.api.usage.byProvider().then((rows: any[]) => setByProvider(rows || [])).catch(() => {})
-    window.api.usage.detailed?.().then((rows: any[]) => {
-      const today = (rows || []).filter((r) => new Date(r.createdAt).toDateString() === todayKey())
-      setTodayCount(today.length)
-    }).catch(() => {})
-  }, [loadChats, loadMemories])
-
-  const lastChat = useMemo(() => {
-    if (!chats.length) return null
-    const pinned = chats.filter((c) => c.pinned)
-    return pinned[0] || chats[0]
-  }, [chats])
-
-  const recentChats = useMemo(() => [...chats].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6), [chats])
-  const pinnedWorkspaces = useMemo(() => workspaces.filter((w) => w.lastOpenedAt).sort((a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0)).slice(0, 4), [workspaces])
-  const recentWorkspaces = useMemo(() => workspaces.filter((w) => !w.lastOpenedAt || (w.id !== settings.lastWorkspaceId)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 3), [workspaces, settings.lastWorkspaceId])
-  const enabledProviders = useMemo(() => providers.filter((p) => p.enabled), [providers])
-  const totalMemories = memories.length
-
-  const openChat = (id: string) => {
-    setCurrentChat(id)
-    setActiveTab('chat')
-  }
-
-  const resumeLast = () => {
-    const id = settings.lastChatId
-    if (id && chats.some((c) => c.id === id)) {
-      setCurrentChat(id)
-      setActiveTab('chat')
-    } else if (lastChat) {
-      openChat(lastChat.id)
-    } else {
-      createChat({ workspaceId: 'global' }).then((c) => c && openChat(c.id))
-    }
-  }
-
-  const openWorkspace = (id: string) => {
-    selectWorkspace(id)
-    setActiveTab('workspace')
-  }
-
-  const maxTokens = usage?.totalTokens || 0
-  const maxProviderTokens = Math.max(1, ...byProvider.map((p) => p.totalTokens || 0))
-
+function HealthDial({ score }: { score: number }) {
+  const radius = 34
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - Math.max(0, Math.min(100, score)) / 100)
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-8 py-8">
-        <div className="fx-card relative overflow-hidden px-7 py-8">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-fx-gold/10 blur-3xl" />
-          <div className="relative">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="fx-caption text-fx-gold">
-                  {todayKey()}
-                </div>
-                <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight">
-                  {greeting()}
-                </h1>
-                <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                  {settings.defaultModelId
-                    ? `Resume where you left off with ${settings.defaultModelId}.`
-                    : 'Resume where you left off, or start something new.'}
-                </p>
-              </div>
-              <Button onClick={resumeLast} className="gap-2 shadow-lg shadow-fx-gold/10 transition-transform duration-150 hover:scale-[1.02]">
-                <Sparkles className="h-4 w-4" />
-                Continue recent work
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <QuickStat icon={<MessageSquare className="h-4 w-4" />} label="Chats" value={String(chats.length)} />
-              <QuickStat icon={<Folder className="h-4 w-4" />} label="Projects" value={String(workspaces.length)} />
-              <QuickStat icon={<Cpu className="h-4 w-4" />} label="Providers" value={String(enabledProviders.length)} />
-              <QuickStat icon={<Brain className="h-4 w-4" />} label="Memories" value={String(totalMemories)} />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="flex flex-col gap-6 lg:col-span-2">
-            {lastChat && (
-              <section>
-                <SectionHeader icon={<Clock className="h-3.5 w-3.5" />} title="Continue recent work" />
-                <button
-                  onClick={resumeLast}
-                  className="fx-hover-lift group flex w-full items-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-left"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-fx-gold/10 text-fx-gold">
-                    <MessageSquare className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{lastChat.title || 'New chat'}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      Updated {formatRelativeTime(lastChat.updatedAt)} · {lastChat.pinned ? 'Pinned' : 'Most recent'}
-                    </span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-fx-gold" />
-                </button>
-              </section>
-            )}
-
-            <section>
-              <SectionHeader icon={<Layers className="h-3.5 w-3.5" />} title="Recent chats" action={chats.length > 0 ? 'View all' : undefined} onAction={() => setActiveTab('chat')} />
-              {recentChats.length === 0 ? (
-                <EmptyPanel
-                  icon={<MessageSquare className="h-5 w-5" />}
-                  text="No conversations yet"
-                  action="Start a chat"
-                  onAction={() => createChat({ workspaceId: 'global' }).then((c) => c && openChat(c.id))}
-                />
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {recentChats.map((chat) => (
-                    <button
-                      key={chat.id}
-                      onClick={() => openChat(chat.id)}
-                      className={cn(
-                        'fx-hover-lift flex items-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-2.5 text-left',
-                        chat.id === currentChatId && 'border-fx-gold/25 bg-fx-gold/5'
-                      )}
-                    >
-                      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-sm">{chat.title || 'New chat'}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{formatRelativeTime(chat.updatedAt)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <SectionHeader icon={<FolderOpen className="h-3.5 w-3.5" />} title="Recent projects" action={workspaces.length > 0 ? 'Open workspace' : undefined} onAction={() => setActiveTab('workspace')} />
-              {(workspaces.length === 0) && (
-                <EmptyPanel
-                  icon={<FolderOpen className="h-5 w-5" />}
-                  text="No projects yet"
-                  action="Open a folder"
-                  onAction={() => openFolder()}
-                />
-              )}
-              {workspaces.length > 0 && (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {workspaces.map((ws) => {
-                    const idx = indexes[ws.id]
-                    return (
-                      <button
-                        key={ws.id}
-                        onClick={() => openWorkspace(ws.id)}
-                        className="fx-hover-lift flex items-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-2.5 text-left"
-                      >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fx-gold/10 text-fx-gold">
-                          <Folder className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{ws.name}</span>
-                          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                            {idx && <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-                            <span className="truncate">{idx ? `${idx.fileCount} files indexed` : (ws.path ? 'Not indexed yet' : 'No folder')}</span>
-                          </span>
-                        </span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <SectionHeader icon={<Activity className="h-3.5 w-3.5" />} title="Today's activity" />
-              {todayCount === 0 ? (
-                <EmptyPanel icon={<Activity className="h-5 w-5" />} text="No requests recorded today yet" />
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <StatTile label="Requests today" value={String(todayCount)} />
-                  <StatTile label="Tokens used" value={formatCompact(usage?.totalTokens || 0)} />
-                  <StatTile label="Estimated cost" value={`$${(usage?.cost || 0).toFixed(4)}`} />
-                </div>
-              )}
-            </section>
-          </div>
-
-          <div className="flex flex-col gap-6">
-            <section>
-              <SectionHeader icon={<ZapIcon />} title="Quick actions" />
-              <div className="flex flex-col gap-2">
-                <QuickAction icon={<Plus className="h-4 w-4" />} label="New chat" onClick={() => createChat({ workspaceId: 'global' }).then((c) => c && openChat(c.id))} />
-                <QuickAction icon={<FolderOpen className="h-4 w-4" />} label="Open a folder" onClick={() => openFolder()} />
-                <QuickAction icon={<Search className="h-4 w-4" />} label="Global search" onClick={() => setActiveTab('search')} />
-                <QuickAction icon={<Cpu className="h-4 w-4" />} label="Command palette  Ctrl K" onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))} />
-              </div>
-            </section>
-
-            {pinnedWorkspaces.length > 0 && (
-              <section>
-                <SectionHeader icon={<Pin className="h-3.5 w-3.5" />} title="Pinned workspaces" />
-                <div className="flex flex-col gap-2">
-                  {pinnedWorkspaces.map((ws) => (
-                    <button
-                      key={ws.id}
-                      onClick={() => openWorkspace(ws.id)}
-                      className="fx-hover-lift flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/40 px-3.5 py-2.5 text-left"
-                    >
-                      <Pin className="h-3.5 w-3.5 shrink-0 text-fx-gold" />
-                      <span className="min-w-0 flex-1 truncate text-sm">{ws.name}</span>
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <section>
-              <SectionHeader icon={<Cpu className="h-3.5 w-3.5" />} title="Provider status" />
-              {enabledProviders.length === 0 ? (
-                <EmptyPanel icon={<Cpu className="h-5 w-5" />} text="No providers configured" action="Open settings" onAction={() => setActiveTab('settings')} />
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {enabledProviders.slice(0, 5).map((p) => {
-                    const status = connectionStatuses[p.id]
-                    const fav = favoriteModels[p.id]
-                    const dot = status === 'ok' ? 'bg-emerald-500' : status === 'error' || status === 'failed' ? 'bg-red-500' : 'bg-fx-gold/60'
-                    return (
-                      <div key={p.id} className="fx-hover-lift flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/40 px-3.5 py-2.5">
-                        <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} />
-                        <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-                        {fav && (
-                          <Badge variant="outline" className="gap-1 border-fx-gold/25 bg-fx-gold/5 px-1.5 py-0 text-[10px] text-fx-gold">
-                            <Star className="h-2.5 w-2.5 fill-fx-gold" /> {fav}
-                          </Badge>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <SectionHeader icon={<Wallet className="h-3.5 w-3.5" />} title="Token usage" />
-              <div className="fx-card space-y-4 px-5 py-4">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <div className="fx-caption text-muted-foreground">Total tokens</div>
-                    <div className="text-xl font-semibold">{formatCompact(maxTokens)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="fx-caption text-muted-foreground">Est. cost</div>
-                    <div className="text-lg font-semibold text-fx-gold">${(usage?.cost || 0).toFixed(4)}</div>
-                  </div>
-                </div>
-                {byProvider.length > 0 && (
-                  <div className="space-y-2">
-                    {byProvider.slice(0, 4).map((p) => (
-                      <div key={p.providerId + p.model}>
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="truncate">{p.providerId}</span>
-                          <span className="ml-2 shrink-0 text-muted-foreground">{formatCompact(p.totalTokens || 0)}</span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full rounded-full bg-gradient-to-r from-fx-gold/60 to-fx-gold" style={{ width: `${Math.max(2, ((p.totalTokens || 0) / maxProviderTokens) * 100)}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section>
-              <SectionHeader icon={<Brain className="h-3.5 w-3.5" />} title="Memory overview" />
-              <button
-                onClick={() => setActiveTab('memory')}
-                className="fx-hover-lift flex w-full items-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-left"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-fx-gold/10 text-fx-gold">
-                  <Brain className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{totalMemories} saved memories</span>
-                  <span className="block text-xs text-muted-foreground">Auto-recalled into every request when enabled</span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
-            </section>
-          </div>
-        </div>
+    <div className="relative h-[88px] w-[88px] shrink-0">
+      <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
+        <circle cx="40" cy="40" r={radius} fill="none" stroke="hsl(var(--border))" strokeWidth="3" />
+        <circle
+          cx="40"
+          cy="40"
+          r={radius}
+          fill="none"
+          stroke="hsl(var(--fx-gold))"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-700 ease-out"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={cn('font-display text-xl tabular-nums', scoreTone(score))}>{score}</span>
+        <span className="fx-caption text-muted-foreground">health</span>
       </div>
     </div>
   )
 }
 
-function ZapIcon() {
-  return <Flame className="h-3.5 w-3.5" />
-}
-
-function SectionHeader({ icon, title, action, onAction }: { icon: React.ReactNode; title: string; action?: string; onAction?: () => void }) {
+function SectionLabel({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <span className="text-fx-gold">{icon}</span>
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      {action && (
-        <button onClick={onAction} className="ml-auto text-xs text-muted-foreground transition-colors hover:text-fx-gold">
-          {action}
-        </button>
-      )}
+    <div className="mb-3 flex items-center justify-between">
+      <span className="fx-caption text-muted-foreground">{children}</span>
+      {action}
     </div>
   )
 }
 
-function QuickStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Meter({ value }: { value: number }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-        {icon}
-      </span>
-      <span>
-        <span className="block text-sm font-semibold leading-tight">{value}</span>
-        <span className="block text-[10px] text-muted-foreground">{label}</span>
-      </span>
+    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary">
+      <div
+        className="h-full rounded-full bg-fx-gold/70 transition-[width] duration-500"
+        style={{ width: `${Math.max(2, Math.min(100, value))}%` }}
+      />
     </div>
   )
 }
 
-function QuickAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function Signal({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <button
-      onClick={onClick}
-      className="fx-hover-lift flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/40 px-3.5 py-2.5 text-left text-sm"
-    >
-      <span className="text-fx-gold">{icon}</span>
-      <span className="flex-1">{label}</span>
-      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-    </button>
-  )
-}
-
-function StatTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-card/40 px-4 py-3">
-      <div className="text-sm font-semibold">{value}</div>
-      <div className="text-[10px] text-muted-foreground">{label}</div>
+    <div className="min-w-0">
+      <div className="fx-caption text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate font-display text-lg leading-tight">{value}</div>
+      {hint ? <div className="mt-0.5 truncate text-xs text-muted-foreground">{hint}</div> : null}
     </div>
   )
 }
 
-function EmptyPanel({ icon, text, action, onAction }: { icon: React.ReactNode; text: string; action?: string; onAction?: () => void }) {
+export function DashboardView() {
+  const setActiveTab = useUIStore((s) => s.setActiveTab)
+  const workspaces = useWorkspaceStore((s) => s.workspaces)
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
+  const selectWorkspace = useWorkspaceStore((s) => s.selectWorkspace)
+  const focusWorkspace = useWorkspaceStore((s) => s.focusWorkspace)
+  const chats = useChatStore((s) => s.chats)
+  const setCurrentChat = useChatStore((s) => s.setCurrentChat)
+  const loadChats = useChatStore((s) => s.loadChats)
+  const lastWorkspaceId = useSettingsStore((s) => s.settings.lastWorkspaceId)
+
+  const activeWsId = currentWorkspace?.id || lastWorkspaceId || workspaces[0]?.id || 'global'
+  const intel = useIntelligenceStore((s) => s.intelligence[activeWsId])
+  const recommendations = useIntelligenceStore((s) => s.recommendations[activeWsId] || EMPTY_RECS)
+  const timeline = useIntelligenceStore((s) => s.timeline[activeWsId] || EMPTY_TIMELINE)
+  const loading = useIntelligenceStore((s) => s.loading[activeWsId])
+  const loadIntelligence = useIntelligenceStore((s) => s.load)
+  const refreshIntelligence = useIntelligenceStore((s) => s.refresh)
+  const briefing = useDeveloperStore((s) => s.briefing)
+  const loadBriefing = useDeveloperStore((s) => s.loadBriefing)
+  const track = useDeveloperStore((s) => s.track)
+  const [dismissedRecs, setDismissedRecs] = useState<string[]>([])
+
+  useEffect(() => {
+    void loadBriefing(activeWsId)
+  }, [activeWsId, loadBriefing])
+
+  useEffect(() => {
+    if (!activeWsId) return
+    loadIntelligence(activeWsId)
+    loadChats(activeWsId).catch(() => {})
+  }, [activeWsId, loadIntelligence, loadChats])
+
+  const recentChats = useMemo(
+    () => [...chats].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5),
+    [chats]
+  )
+
+  const topRecommendations = useMemo(
+    () => recommendations.filter((rec) => !dismissedRecs.includes(rec.id)).slice(0, 4),
+    [recommendations, dismissedRecs]
+  )
+
+  const risks = useMemo(() => {
+    if (!intel) return []
+    return RISK_LABELS
+      .map(({ key, label }) => ({ label, ...intel.risks[key] }))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 4)
+  }, [intel])
+
+  const healthDims = useMemo(() => {
+    if (!intel) return []
+    const h = intel.health
+    return [
+      { label: 'AI readiness', value: h.aiReadinessScore },
+      { label: 'Architecture', value: h.architectureScore },
+      { label: 'Documentation', value: h.documentationScore },
+      { label: 'Security', value: h.securityScore },
+    ]
+  }, [intel])
+
+  const openWorkspacePanel = (panel: 'intelligence' | 'brain' | 'explorer' | 'terminal-git') => {
+    if (activeWsId && activeWsId !== 'global') focusWorkspace(activeWsId, panel)
+    setActiveTab('workspace')
+  }
+
+  const openChat = (chatId: string) => {
+    setCurrentChat(chatId)
+    setActiveTab('chat')
+  }
+
+  const hasWorkspace = activeWsId !== 'global' && !!intel
+
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/20 px-6 py-10 text-center">
-      <span className="text-muted-foreground/60">{icon}</span>
-      <p className="text-sm text-muted-foreground">{text}</p>
-      {action && (
-        <Button variant="outline" size="sm" onClick={onAction} className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" /> {action}
-        </Button>
-      )}
+    <div className="h-full overflow-y-auto">
+      <div className="fx-reveal mx-auto max-w-6xl space-y-10 px-10 py-10">
+        <header className="space-y-6">
+          <div className="flex items-center justify-between">
+            <span className="fx-caption text-muted-foreground">
+              Mission Control · {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+            </span>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 gap-2 text-xs text-muted-foreground hover:text-foreground">
+                    <Layers className="h-3.5 w-3.5" />
+                    {currentWorkspace?.name || 'Select workspace'}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  {workspaces.length === 0 ? (
+                    <DropdownMenuItem disabled>No workspaces yet</DropdownMenuItem>
+                  ) : (
+                    workspaces.map((ws) => (
+                      <DropdownMenuItem
+                        key={ws.id}
+                        onSelect={() => selectWorkspace(ws.id)}
+                        className={cn(ws.id === activeWsId && 'text-fx-gold')}
+                      >
+                        <span className="truncate">{ws.name}</span>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                aria-label="Refresh intelligence"
+                onClick={() => activeWsId && activeWsId !== 'global' && refreshIntelligence(activeWsId)}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-start justify-between gap-8">
+            <div className="min-w-0 max-w-3xl">
+              <div className="fx-caption text-fx-gold/80">{greeting()}</div>
+              <h1 className="mt-1 truncate font-display text-3xl leading-tight">
+                {currentWorkspace?.name || 'Fluxora'}
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {intel?.contextSummary ||
+                  'Open a workspace to let Fluxora read the project and tell you what matters next.'}
+              </p>
+            </div>
+            <HealthDial score={intel?.health.overallWorkspaceHealth.score ?? 0} />
+          </div>
+
+          {hasWorkspace && (
+            <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-y border-border/60 py-6 md:grid-cols-4">
+              <Signal
+                label="Architecture"
+                value={intel.architectureSummary}
+                hint={intel.profile.projectType}
+              />
+              <Signal
+                label="Stage"
+                value={intel.insights.currentDevelopmentStage}
+                hint={`${intel.insights.confidenceLevel} confidence`}
+              />
+              <Signal
+                label="Repository"
+                value={intel.repository.dirtyState ? 'Changes pending' : 'Clean tree'}
+                hint={intel.repository.branchStatus}
+              />
+              <Signal
+                label="Complexity"
+                value={intel.complexity.complexity}
+                hint={intel.complexity.estimatedProjectSize}
+              />
+            </div>
+          )}
+        </header>
+
+        {briefing ? (
+          <section className="fx-enter rounded-2xl border border-fx-gold/15 bg-fx-gold/[0.04] px-6 py-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="fx-caption text-fx-gold/80">{briefing.greeting}</p>
+                <p className="mt-1 font-display text-lg leading-snug">{briefing.sinceLabel}</p>
+                <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                  {briefing.lines.map((line) => (
+                    <span key={line} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="h-1 w-1 rounded-full bg-fx-gold/60" />
+                      {line}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-foreground/80">
+                  <span className="text-fx-gold/90">Today's focus</span>
+                  <span className="mx-1.5 text-muted-foreground/40">·</span>
+                  {briefing.focus}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setActiveTab('developer')}
+              >
+                Your profile
+                <ArrowRight className="ml-1.5 h-3 w-3" />
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        <TerminalActivityCard workspaceId={activeWsId} />
+
+        {!hasWorkspace ? (
+          <div className="rounded-2xl border border-dashed border-border/70 px-8 py-14 text-center">
+            <Layers className="mx-auto h-6 w-6 text-muted-foreground" />
+            <p className="mt-4 font-display text-lg">No workspace indexed yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+              Open a folder to build its intelligence — architecture, health, risks and next actions.
+            </p>
+            <Button variant="outline" size="sm" className="mt-5" onClick={() => setActiveTab('workspace')}>
+              Open a workspace
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+            <div className="space-y-10">
+              <section>
+                <SectionLabel
+                  action={
+                    <button
+                      className="text-xs text-muted-foreground transition-colors hover:text-fx-gold"
+                      onClick={() => openWorkspacePanel('intelligence')}
+                    >
+                      All recommendations
+                    </button>
+                  }
+                >
+                  What to work on
+                </SectionLabel>
+                {topRecommendations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nothing pressing — the project reads healthy.</p>
+                ) : (
+                  <div className="divide-y divide-border/50 border-t border-border/50">
+                    {topRecommendations.map((rec) => (
+                      <div key={rec.id} className="fx-row group flex w-full items-start gap-2 py-3.5">
+                        <button
+                          onClick={() => {
+                            track('recommendation_accepted', {
+                              key: rec.category,
+                              workspaceId: activeWsId,
+                            })
+                            openWorkspacePanel(rec.category === 'dependencies' ? 'explorer' : 'intelligence')
+                          }}
+                          className="flex min-w-0 flex-1 items-start gap-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-fx-gold/30"
+                        >
+                          <span
+                            className={cn(
+                              'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full',
+                              rec.priority === 'high'
+                                ? 'bg-red-400'
+                                : rec.priority === 'medium'
+                                  ? 'bg-amber-400'
+                                  : 'bg-emerald-400'
+                            )}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              <span className="truncate text-sm font-medium">{rec.title}</span>
+                              <span className="fx-caption shrink-0 text-muted-foreground">{rec.category}</span>
+                            </span>
+                            <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                              {rec.why}
+                            </span>
+                          </span>
+                          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-fx-gold" />
+                        </button>
+                        <div className="flex shrink-0 items-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground/60 hover:text-emerald-400"
+                            aria-label="Accept recommendation"
+                            onClick={() => {
+                              track('recommendation_accepted', {
+                                key: rec.category,
+                                workspaceId: activeWsId,
+                              })
+                              openWorkspacePanel(rec.category === 'dependencies' ? 'explorer' : 'intelligence')
+                            }}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground/60 hover:text-foreground"
+                            aria-label="Dismiss recommendation"
+                            onClick={() => {
+                              track('recommendation_ignored', {
+                                key: rec.category,
+                                workspaceId: activeWsId,
+                              })
+                              setDismissedRecs((current) => [...current, rec.id])
+                            }}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <SectionLabel
+                  action={
+                    <button
+                      className="text-xs text-muted-foreground transition-colors hover:text-fx-gold"
+                      onClick={() => openWorkspacePanel('intelligence')}
+                    >
+                      Risk engine
+                    </button>
+                  }
+                >
+                  Where risk lives
+                </SectionLabel>
+                <div className="space-y-4 border-t border-border/50 pt-4">
+                  {risks.map((risk) => (
+                    <div key={risk.label}>
+                      <div className="flex items-baseline justify-between gap-4">
+                        <span className="text-sm">{risk.label}</span>
+                        <span className={cn('font-display text-sm tabular-nums', scoreTone(risk.score))}>
+                          {risk.score}
+                        </span>
+                      </div>
+                      <Meter value={risk.score} />
+                      <p className="mt-1.5 truncate text-xs text-muted-foreground">
+                        {risk.reasons[0]?.reason || 'No signals'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <SectionLabel>Continue</SectionLabel>
+                {recentChats.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No conversations in this workspace yet.</p>
+                ) : (
+                  <div className="divide-y divide-border/50 border-t border-border/50">
+                    {recentChats.map((chat) => (
+                      <button
+                        key={chat.id}
+                        onClick={() => openChat(chat.id)}
+                        className="fx-row group flex w-full items-center gap-3 py-2.5 text-left"
+                      >
+                        <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate text-sm">{chat.title || 'Untitled'}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatRelativeTime(chat.updatedAt)}
+                        </span>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-fx-gold" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <aside className="space-y-10">
+              <section>
+                <SectionLabel
+                  action={
+                    <button
+                      className="text-xs text-muted-foreground transition-colors hover:text-fx-gold"
+                      onClick={() => openWorkspacePanel('intelligence')}
+                    >
+                      Details
+                    </button>
+                  }
+                >
+                  Health
+                </SectionLabel>
+                <div className="space-y-3 border-t border-border/50 pt-4">
+                  {healthDims.map((dim) => (
+                    <div key={dim.label}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">{dim.label}</span>
+                        <span className={cn('text-xs tabular-nums', scoreTone(dim.value.score))}>
+                          {dim.value.score}
+                        </span>
+                      </div>
+                      <Meter value={dim.value.score} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <SectionLabel>Intelligence changes</SectionLabel>
+                {timeline.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No changes recorded yet. Re-indexing the workspace starts the timeline.
+                  </p>
+                ) : (
+                  <div className="space-y-3 border-t border-border/50 pt-4">
+                    {timeline.slice(0, 5).map((event) => {
+                      const Icon = TIMELINE_ICON[event.kind] || Activity
+                      return (
+                        <div key={event.id} className="flex items-start gap-2.5">
+                          <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fx-gold/70" />
+                          <div className="min-w-0">
+                            <p className="truncate text-xs leading-snug">{event.title}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {formatRelativeTime(event.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <SectionLabel>Project shape</SectionLabel>
+                <div className="space-y-2.5 border-t border-border/50 pt-4 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Stack</span>
+                    <span className="truncate text-right">
+                      {intel.profile.frameworks.slice(0, 3).join(', ') || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Languages</span>
+                    <span className="truncate text-right">
+                      {intel.profile.languages.slice(0, 3).map((l) => l.lang).join(', ') || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Packages</span>
+                    <span className="truncate text-right">
+                      {Object.values(intel.profile.dependencies || {}).reduce(
+                        (n, map) => n + Object.keys(map || {}).length,
+                        0
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Strengths</span>
+                    <span className="truncate text-right">
+                      {intel.insights.strengths[0] || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Weakness</span>
+                    <span className="truncate text-right">
+                      {intel.insights.weaknesses[0] || 'None detected'}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <SectionLabel>Go deeper</SectionLabel>
+                <div className="space-y-1 border-t border-border/50 pt-3">
+                  <button
+                    onClick={() => openWorkspacePanel('intelligence')}
+                    className="fx-row flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-xs"
+                  >
+                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                    Workspace intelligence
+                  </button>
+                  <button
+                    onClick={() => openWorkspacePanel('brain')}
+                    className="fx-row flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-xs"
+                  >
+                    <Brain className="h-3.5 w-3.5 text-muted-foreground" />
+                    Project brain
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('visualizations')}
+                    className="fx-row flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-xs"
+                  >
+                    <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+                    Evolution timeline
+                  </button>
+                </div>
+              </section>
+
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <ShieldCheck className="h-3 w-3" />
+                Derived from local workspace data
+                <Clock className="ml-auto h-3 w-3" />
+                {intel ? formatRelativeTime(intel.generatedAt) : 'not indexed'}
+              </div>
+            </aside>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-function formatCompact(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
-  return String(n)
-}
+export default DashboardView

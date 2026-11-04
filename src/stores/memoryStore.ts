@@ -11,9 +11,9 @@ export interface MemoryStore {
   addMemory: (data: Partial<MemoryEntry>) => Promise<MemoryEntry | null>
   updateMemory: (id: string, data: Partial<MemoryEntry>) => Promise<void>
   deleteMemory: (id: string) => Promise<void>
-  searchMemories: (query: string) => Promise<MemoryEntry[]>
-  toggleMemory: (enabled: boolean) => Promise<void>
-  getMemorySettings: () => Promise<any>
+  searchMemories: (query: string, scope?: string) => Promise<MemoryEntry[]>
+  toggleMemory: (enabled: boolean, scope?: string) => Promise<void>
+  getMemorySettings: (scope?: string) => Promise<any>
   setMemoryEnabled: (enabled: boolean) => void
   clearResults: () => void
 }
@@ -56,19 +56,19 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }))
   },
 
-  searchMemories: async (query) => {
-    const results = await window.api.memory.search(query)
+  searchMemories: async (query, scope = 'global') => {
+    const results = await window.api.memory.search(scope, query)
     set({ searchResults: results })
     return results
   },
 
-  toggleMemory: async (enabled) => {
-    await window.api.memory.toggle(enabled)
+  toggleMemory: async (enabled, scope = 'global') => {
+    await window.api.memory.toggle(scope, enabled)
     set({ memoryEnabled: enabled })
   },
 
-  getMemorySettings: async () => {
-    const settings = await window.api.memory.getSettings()
+  getMemorySettings: async (scope = 'global') => {
+    const settings = await window.api.memory.getSettings(scope)
     set({ memoryEnabled: settings?.memoryEnabled !== false })
     return settings
   },

@@ -1,7 +1,17 @@
 {
   "name": "ai-workspace",
   "version": "1.0.0",
-  "description": "Production-quality desktop AI workspace",
+  "description": "Local-first desktop AI workspace for coding, memory, and project intelligence",
+  "author": "Shashank Gowda N C",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shashu123456/fluxora.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shashu123456/fluxora/issues"
+  },
+  "homepage": "https://github.com/shashu123456/fluxora#readme",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -13,7 +23,10 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:debug": "concurrently -k \"npm run build:electron && wait-on http://localhost:5173\" \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder --config electron-builder.json"
+    "electron:build": "npm run build && electron-builder --config electron-builder.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
@@ -56,20 +69,27 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/react-syntax-highlighter": "^15.5.11",
     "@types/uuid": "^9.0.7",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "electron": "^28.2.0",
     "electron-builder": "^24.9.1",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
+    "vitest": "^2.1.9",
     "wait-on": "^7.2.0"
   }
 }

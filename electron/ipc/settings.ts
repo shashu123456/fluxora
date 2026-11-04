@@ -1,60 +1,81 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { all, get, run, transaction, getAllTables } from '../database'
-import { AppSettings, ImportExportData } from '../../src/types'
+import { AppSettings, ImportExportData, DEFAULT_APP_SETTINGS } from '../../src/types'
 import fs from 'fs'
 import path from 'path'
 import { getDataDir } from '../config'
 import { sendNotification } from './system'
+import { createBackup } from '../database/backup'
+import { getSecretManager } from '../services/secrets/manager'
+import { serializeSecretMetadata, sanitizeSettingsForExport } from '../services/secrets/serializer'
+import { deleteLocalFallbackKey } from '../services/secrets/keyProvider'
+import { CURRENT_EXPORT_SCHEMA_VERSION, validateImportPayload } from '../services/dataTransfer/validation'
 
-const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'dark',
-  fontSize: 'md',
-  sidebarWidth: 280,
-  language: 'en',
-  portableMode: false,
-  autoSave: true,
-  autoBackup: true,
-  backupIntervalHours: 24,
-  restoreOnStartup: true,
-  crashRecoveryEnabled: true,
-  notificationsEnabled: true,
-  markdownEnabled: true,
-  codeHighlightingEnabled: true,
-  showReasoning: true,
-  streamingEnabled: true,
+const DEFAULT_SETTINGS: AppSettings = DEFAULT_APP_SETTINGS
+
+/**
+ * Storage-key <-> public-key aliases. The renderer speaks camelCase; the
+ * `settings` table keeps the historical snake/dotted keys so existing rows
+ * stay readable.
+ */
+const STORAGE_KEY_ALIASES: Record<string, string> = {
+  favoriteModels: 'favorite_models',
+  terminalAllowlist: 'terminal.allowlist',
+}
+
+const PUBLIC_KEY_ALIASES: Record<string, string> = {
+  favorite_models: 'favoriteModels',
+  'terminal.allowlist': 'terminalAllowlist',
 }
 
 export function getDefaultSettings(): AppSettings {
   return { ...DEFAULT_SETTINGS }
 }
 
-export function registerSettingsIpc() {
-  ipcMain.handle('settings:get', async () => {
-    const rows = await all<any>('SELECT * FROM settings WHERE key NOT LIKE "memory_%" AND key NOT LIKE "backup_%"')
-    const settings: any = { ...DEFAULT_SETTINGS }
-    for (const row of rows) {
-      try {
-        settings[row.key] = JSON.parse(row.value)
-      } catch {
-        settings[row.key] = row.value
+/** Reads the settings table into a typed, alias-normalised object. */
+export async function readSettings(): Promise<AppSettings> {
+  const rows = await all<any>(
+    'SELECT * FROM settings WHERE key NOT LIKE "memory_%" AND key NOT LIKE "backup_%"'
+  )
+  const settings: any = { ...DEFAULT_SETTINGS }
+  for (const row of rows) {
+    const key = PUBLIC_KEY_ALIASES[row.key] || row.key
+    try {
+      settings[key] = JSON.parse(row.value)
+    } catch {
+      settings[key] = row.value
+    }
+  }
+  if (settings.backupSettings) {
+    settings.backupEnabled = settings.backupSettings.backupEnabled
+    settings.backupIntervalHours = settings.backupSettings.intervalHours
+  }
+  return settings
+}
+
+/** Writes only the provided keys, atomically, without clobbering sibling keys. */
+export async function writeSettings(updates: Record<string, unknown>): Promise<AppSettings> {
+  const now = Date.now()
+  const entries = Object.entries(updates).filter(([, value]) => value !== undefined)
+  if (entries.length > 0) {
+    await transaction(async () => {
+      for (const [key, value] of entries) {
+        const storageKey = STORAGE_KEY_ALIASES[key] || key
+        await run(
+          'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+          [storageKey, JSON.stringify(value), now]
+        )
       }
-    }
-    if (settings.backupSettings) {
-      settings.backupEnabled = settings.backupSettings.backupEnabled
-      settings.backupIntervalHours = settings.backupSettings.intervalHours
-    }
-    return settings
-  })
+    })
+  }
+  return readSettings()
+}
+
+export function registerSettingsIpc() {
+  ipcMain.handle('settings:get', async () => readSettings())
 
   ipcMain.handle('settings:update', async (_e, data: Partial<AppSettings>) => {
-    const now = Date.now()
-    for (const [key, value] of Object.entries(data)) {
-      await run(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        [key, JSON.stringify(value), now]
-      )
-    }
-    return true
+    return writeSettings((data || {}) as Record<string, unknown>)
   })
 
   ipcMain.handle('settings:export', async (_e) => {
@@ -62,7 +83,7 @@ export function registerSettingsIpc() {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showSaveDialog(win!, {
       title: 'Export All Data',
-      defaultPath: path.join(getDataDir(), `ai-workspace-export-${Date.now()}.json`),
+      defaultPath: path.join(getDataDir(), `fluxora-export-${Date.now()}.json`),
       filters: [{ name: 'JSON', extensions: ['json'] }],
     })
     if (result.canceled || !result.filePath) return null
@@ -70,29 +91,69 @@ export function registerSettingsIpc() {
     return result.filePath
   })
 
-  ipcMain.handle('settings:import', async (_e) => {
-    const win = BrowserWindow.getFocusedWindow()
-    const result = await dialog.showOpenDialog(win!, {
-      title: 'Import Data',
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      properties: ['openFile'],
-    })
-    if (result.canceled || !result.filePaths[0]) return null
-    const data = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'))
-    await importAllData(data)
-    sendNotification('Import Complete', 'All data has been imported successfully', 'success')
-    return true
+  ipcMain.handle('settings:validate-import', async (_e, filePath?: string) => {
+    const resolved = filePath || (await pickImportFile())
+    if (!resolved) return null
+    const { data, bytes } = readImportFile(resolved)
+    const validation = validateImportPayload(data, bytes)
+    return { ...validation, path: resolved, data: undefined }
+  })
+
+  ipcMain.handle('settings:import', async (_e, filePath?: string) => {
+    const resolved = filePath || (await pickImportFile())
+    if (!resolved) return null
+    const { data, bytes } = readImportFile(resolved)
+    const validation = validateImportPayload(data, bytes)
+    if (!validation.ok || !validation.data) {
+      throw new Error(`Import validation failed:\n${validation.errors.join('\n')}`)
+    }
+    await createBackup()
+    await importAllData(validation.data)
+    sendNotification(
+      'Import Complete',
+      `Imported ${validation.counts.providers} providers and ${validation.counts.chats} chats. Credentials are not included; re-enter keys if needed.`,
+      'success'
+    )
+    return { ok: true, counts: validation.counts, warnings: validation.warnings }
   })
 
   ipcMain.handle('settings:reset', async (_e) => {
+    await run('DELETE FROM settings')
+    return readSettings()
+  })
+
+  ipcMain.handle('settings:erase-all', async (_e) => {
     await transaction(async () => {
       const tables = getAllTables()
       for (const table of tables) {
         await run(`DELETE FROM ${table}`)
       }
     })
+    await deleteLocalFallbackKey()
     return true
   })
+}
+
+async function pickImportFile(): Promise<string | null> {
+  const win = BrowserWindow.getFocusedWindow()
+  const result = await dialog.showOpenDialog(win!, {
+    title: 'Import Data',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] || null
+}
+
+function readImportFile(filePath: string): { data: unknown; bytes: number } {
+  const stat = fs.statSync(filePath)
+  const raw = fs.readFileSync(filePath, 'utf-8')
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    throw new Error('Import file is not valid JSON.')
+  }
+  return { data, bytes: stat.size }
 }
 
 export async function exportAllData(): Promise<ImportExportData> {
@@ -108,6 +169,8 @@ export async function exportAllData(): Promise<ImportExportData> {
     all<any>('SELECT * FROM notifications'),
   ])
 
+  const secretMetadata = await getSecretManager().listProviderMetadata()
+
   const settings: any = { ...DEFAULT_SETTINGS }
   for (const row of settingsRows) {
     try {
@@ -118,14 +181,18 @@ export async function exportAllData(): Promise<ImportExportData> {
   }
 
   return {
-    app: 'ai-workspace',
+    app: 'fluxora',
     version: '1.0.0',
+    schemaVersion: CURRENT_EXPORT_SCHEMA_VERSION,
+    secretExportMode: 'metadata-only',
+    providerSecrets: secretMetadata.map(serializeSecretMetadata),
     exportedAt: new Date().toISOString(),
-    settings,
+    settings: sanitizeSettingsForExport(settings) as AppSettings,
     providers: providerRows.map((r) => ({
       id: r.id, name: r.name, type: r.type, baseUrl: r.base_url, apiKey: '',
       models: JSON.parse(r.models || '[]'), enabled: !!r.enabled, isCustom: !!r.is_custom,
-      color: r.color, createdAt: r.created_at, updatedAt: r.updated_at,
+      color: r.color, capabilities: r.capabilities ? JSON.parse(r.capabilities) : undefined,
+      createdAt: r.created_at, updatedAt: r.updated_at,
     })),
     chats: chatRows.map((r) => ({
       id: r.id, workspaceId: r.workspace_id, title: r.title, pinned: r.pinned, archived: r.archived,
@@ -179,7 +246,7 @@ async function importAllData(data: ImportExportData) {
     for (const p of data.providers || []) {
       await run(
         'INSERT OR REPLACE INTO providers (id, name, type, base_url, api_key, models, enabled, is_custom, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [p.id, p.name, p.type, p.baseUrl, p.apiKey, JSON.stringify(p.models), p.enabled ? 1 : 0, p.isCustom ? 1 : 0, p.color, p.createdAt, p.updatedAt]
+        [p.id, p.name, p.type, p.baseUrl, '', JSON.stringify(p.models), p.enabled ? 1 : 0, p.isCustom ? 1 : 0, p.color, p.createdAt, p.updatedAt]
       )
     }
     for (const w of data.workspaces || []) {
@@ -227,17 +294,4 @@ async function importAllData(data: ImportExportData) {
       )
     }
   })
-}
-
-export async function getUserSettings(): Promise<AppSettings> {
-  const rows = await all<any>('SELECT * FROM settings')
-  const settings: any = { ...DEFAULT_SETTINGS }
-  for (const row of rows) {
-    try {
-      settings[row.key] = JSON.parse(row.value)
-    } catch {
-      settings[row.key] = row.value
-    }
-  }
-  return settings
 }

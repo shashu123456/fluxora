@@ -53,6 +53,8 @@ const api = {
     refreshModels: (id: string) => ipcRenderer.invoke('providers:refresh-models', id),
     ensureDefaults: () => ipcRenderer.invoke('providers:ensure-defaults'),
     getGlobalProviders: () => ipcRenderer.invoke('providers:global-list'),
+    rotate: (id: string) => ipcRenderer.invoke('providers:rotate', id),
+    secretMetadata: (id: string) => ipcRenderer.invoke('providers:secret-metadata', id),
   },
 
   // Streaming AI
@@ -76,6 +78,7 @@ const api = {
     stop: (requestId: string) => ipcRenderer.send('ai:stop', requestId),
     complete: (payload: any) => ipcRenderer.invoke('ai:complete', payload),
     autoRoute: (payload: any) => ipcRenderer.invoke('ai:auto-route', payload),
+    recommend: (payload: any) => ipcRenderer.invoke('ai:recommend', payload),
   },
 
   // Memory
@@ -94,7 +97,7 @@ const api = {
       const enabled = args.length > 1 ? args[1] : args[0]
       return ipcRenderer.invoke('memory:toggle', workspaceId, !!enabled)
     },
-    getSettings: () => ipcRenderer.invoke('memory:settings'),
+    getSettings: (workspaceId?: string) => ipcRenderer.invoke('memory:settings', workspaceId),
     setAutoRemember: (workspaceId: string, enabled: boolean) => ipcRenderer.invoke('memory:auto-remember', workspaceId, enabled),
     autoExtract: (workspaceId: string, content: string) => ipcRenderer.invoke('memory:auto-extract', workspaceId, content),
   },
@@ -107,6 +110,8 @@ const api = {
     update: (id: string, data: any) => ipcRenderer.invoke('brain:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('brain:delete', id),
     search: (workspaceId: string, query: string) => ipcRenderer.invoke('brain:search', workspaceId, query),
+    sync: (workspaceId: string) => ipcRenderer.invoke('brain:sync', workspaceId),
+    insights: (workspaceId: string) => ipcRenderer.invoke('brain:insights', workspaceId),
   },
 
   // Workspaces
@@ -141,20 +146,32 @@ const api = {
     getFileStats: (p: string) => ipcRenderer.invoke('workspace:file-stats', p),
     index: (workspaceId: string) => ipcRenderer.invoke('workspace:index', workspaceId),
     getIndex: (workspaceId: string) => ipcRenderer.invoke('workspace:get-index', workspaceId),
+    intelligence: (workspaceId: string) => ipcRenderer.invoke('workspace:intelligence', workspaceId),
+    buildIntelligence: (workspaceId: string) => ipcRenderer.invoke('workspace:build-intelligence', workspaceId),
   },
 
   // Terminal & Git
   terminal: {
-    run: (...args: any[]) => {
-      if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
-        const o = args[0] as { workspaceId?: string; command: string; cwd?: string; approved?: boolean }
-        return ipcRenderer.invoke('terminal:run', o.workspaceId ?? 'global', o.command, o.cwd ?? '', o.approved ?? false)
-      }
-      return ipcRenderer.invoke('terminal:run', args[0], args[1], args[2] ?? '', args[3] ?? false)
+    run: (request: {
+      workspaceId?: string
+      command: string
+      cwd?: string
+      timeoutMs?: number
+    }) => ipcRenderer.invoke('terminal:run', request),
+    history: (workspaceId: string = 'global') => ipcRenderer.invoke('terminal:history', workspaceId),
+    cancel: (runId: string) => ipcRenderer.invoke('terminal:cancel', runId),
+    activity: (workspaceId?: string) => ipcRenderer.invoke('terminal:activity', workspaceId),
+    context: (workspaceId: string) => ipcRenderer.invoke('terminal:context', workspaceId),
+    recommendations: (workspaceId: string) => ipcRenderer.invoke('terminal:recommendations', workspaceId),
+    onUpdated: (cb: (event: unknown) => void) => {
+      const listener = (_event: unknown, payload: unknown) => cb(payload)
+      ipcRenderer.on('terminal:updated', listener)
+      return () => ipcRenderer.removeListener('terminal:updated', listener)
     },
-    history: (...args: any[]) => {
-      if (args.length === 0) return ipcRenderer.invoke('terminal:history', 'global')
-      return ipcRenderer.invoke('terminal:history', args[0])
+    onOutput: (cb: (event: unknown) => void) => {
+      const listener = (_event: unknown, payload: unknown) => cb(payload)
+      ipcRenderer.on('terminal:output', listener)
+      return () => ipcRenderer.removeListener('terminal:output', listener)
     },
   },
   git: {
@@ -185,10 +202,12 @@ const api = {
     get: () => ipcRenderer.invoke('settings:get'),
     update: (data: any) => ipcRenderer.invoke('settings:update', data),
     exportAll: () => ipcRenderer.invoke('settings:export'),
-    importAll: () => ipcRenderer.invoke('settings:import'),
+    importAll: (filePath?: string) => ipcRenderer.invoke('settings:import', filePath),
     exportAllData: () => ipcRenderer.invoke('settings:export'),
-    importAllData: () => ipcRenderer.invoke('settings:import'),
+    importAllData: (filePath?: string) => ipcRenderer.invoke('settings:import', filePath),
+    validateImport: (filePath?: string) => ipcRenderer.invoke('settings:validate-import', filePath),
     reset: () => ipcRenderer.invoke('settings:reset'),
+    eraseAll: () => ipcRenderer.invoke('settings:erase-all'),
   },
 
   // Backup
@@ -213,7 +232,7 @@ const api = {
 
   // Search
   search: {
-    global: (query: string) => ipcRenderer.invoke('search:global', { query }),
+    global: (query: string, workspaceId?: string) => ipcRenderer.invoke('search:global', { query, workspaceId }),
   },
 
   // Notifications
@@ -223,6 +242,36 @@ const api = {
     markRead: (id: string) => ipcRenderer.invoke('notifications:mark-read', id),
     markAllRead: () => ipcRenderer.invoke('notifications:mark-all-read'),
     delete: (id: string) => ipcRenderer.invoke('notifications:delete', id),
+  },
+
+  // Workspace Intelligence
+  intelligence: {
+    get: (workspaceId: string) => ipcRenderer.invoke('intelligence:get', workspaceId),
+    rebuild: (workspaceId: string) => ipcRenderer.invoke('intelligence:rebuild', workspaceId),
+    recommendations: (workspaceId: string) => ipcRenderer.invoke('intelligence:recommendations', workspaceId),
+    timeline: (workspaceId: string, limit?: number) => ipcRenderer.invoke('intelligence:timeline', workspaceId, limit),
+    evolve: (workspaceId: string) => ipcRenderer.invoke('intelligence:evolve', workspaceId),
+  },
+
+  // Developer learning layer
+  developer: {
+    profile: () => ipcRenderer.invoke('developer:profile'),
+    insights: () => ipcRenderer.invoke('developer:insights'),
+    sessions: (limit?: number) => ipcRenderer.invoke('developer:sessions', limit),
+    briefing: (workspaceId?: string | null, focusHint?: string | null) =>
+      ipcRenderer.invoke('developer:briefing', workspaceId, focusHint),
+    overview: (workspaceId?: string | null, focusHint?: string | null) =>
+      ipcRenderer.invoke('developer:overview', workspaceId, focusHint),
+    personalization: () => ipcRenderer.invoke('developer:personalization'),
+    affinity: () => ipcRenderer.invoke('developer:affinity'),
+    track: (kind: string, input?: any) => ipcRenderer.invoke('developer:track', kind, input),
+    memory: {
+      list: () => ipcRenderer.invoke('developer:memory:list'),
+      create: (data: any) => ipcRenderer.invoke('developer:memory:create', data),
+      update: (id: string, data: any) => ipcRenderer.invoke('developer:memory:update', id, data),
+      delete: (id: string) => ipcRenderer.invoke('developer:memory:delete', id),
+    },
+    reset: (options?: any) => ipcRenderer.invoke('developer:reset', options),
   },
 
   // Misc

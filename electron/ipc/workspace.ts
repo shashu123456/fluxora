@@ -1,10 +1,20 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { all, get, run, transaction } from '../database'
-import { Workspace, AttachedFile, FileEntry } from '../../src/types'
+import { Workspace, FileEntry } from '../../src/types'
 import path from 'path'
 import fs from 'fs'
-import { isSkippedDir, BINARY_EXTENSIONS, formatBytes } from './shared'
+import { isSkippedDir, BINARY_EXTENSIONS } from './shared'
+import {
+  assertPathAllowed,
+  assertPathInsideRoots,
+  canonicalizePath,
+  isCanonicalPathInsideRoot,
+  sanitizeFileName,
+  trustPath,
+  trustPaths,
+  validatePathInput,
+} from '../security-policy'
 
 function mapRow(row: any): Workspace {
   return {
@@ -22,18 +32,32 @@ function mapRow(row: any): Workspace {
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 
-async function assertInsideWorkspace(filePath: string) {
+async function workspaceRoots(): Promise<Array<string | null>> {
   const workspaces = await all<{ path: string | null }>('SELECT path FROM workspaces WHERE path IS NOT NULL')
-  const resolved = path.resolve(filePath)
-  const inside = workspaces.some((w) => {
-    if (!w.path) return false
-    const root = path.resolve(w.path)
-    const rel = path.relative(root, resolved)
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
-  })
-  if (!inside) {
-    throw new Error('This operation is only allowed inside a registered workspace folder.')
+  return workspaces.map((w) => w.path)
+}
+
+async function assertInsideWorkspace(filePath: string): Promise<string> {
+  return assertPathInsideRoots(filePath, await workspaceRoots())
+}
+
+async function assertReadable(filePath: string): Promise<string> {
+  return assertPathAllowed(filePath, await workspaceRoots())
+}
+
+function requireExistingDirectory(input: unknown): string {
+  const canonical = canonicalizePath(input)
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(canonical)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('Workspace folder does not exist.')
+    }
+    throw error
   }
+  if (!stat.isDirectory()) throw new Error('Workspace path must be a directory.')
+  return canonical
 }
 
 export function registerWorkspaceIpc() {
@@ -43,16 +67,22 @@ export function registerWorkspaceIpc() {
   })
 
   ipcMain.handle('workspace:create', async (_e, data: Partial<Workspace>) => {
+    const payload: Partial<Workspace> = data && typeof data === 'object' ? data : {}
+    if (payload.path !== undefined && payload.path !== null && typeof payload.path !== 'string') {
+      throw new Error('Invalid workspace path.')
+    }
+    const workspacePath =
+      payload.path && payload.path.trim() ? requireExistingDirectory(payload.path) : undefined
     const now = Date.now()
     const ws: Workspace = {
       id: randomUUID(),
-      name: data.name || 'New Workspace',
-      path: data.path,
+      name: payload.name || 'New Workspace',
+      path: workspacePath,
       createdAt: now,
       updatedAt: now,
-      color: data.color,
-      icon: data.icon,
-      settings: data.settings,
+      color: payload.color,
+      icon: payload.icon,
+      settings: payload.settings,
     }
     await run(
       'INSERT INTO workspaces (id, name, path, color, icon, created_at, updated_at, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -74,10 +104,15 @@ export function registerWorkspaceIpc() {
     }
     for (const [tsKey, dbKey] of Object.entries(mapping)) {
       const v = (data as any)[tsKey]
-      if (v !== undefined) {
+      if (v === undefined) continue
+      if (tsKey === 'path') {
+        if (typeof v !== 'string' || !v.trim()) throw new Error('Invalid workspace path.')
         fields.push(dbKey)
-        values.push(v)
+        values.push(requireExistingDirectory(v))
+        continue
       }
+      fields.push(dbKey)
+      values.push(v)
     }
     if (data.settings !== undefined) {
       fields.push('settings')
@@ -116,7 +151,9 @@ export function registerWorkspaceIpc() {
       properties: ['openDirectory'],
     })
     if (result.canceled || !result.filePaths[0] || result.filePaths.length === 0) return null
-    return result.filePaths[0]
+    const selected = requireExistingDirectory(result.filePaths[0])
+    trustPath(selected)
+    return selected
   })
 
   ipcMain.handle('workspace:select-folder', async (_e) => {
@@ -126,77 +163,90 @@ export function registerWorkspaceIpc() {
       properties: ['openDirectory'],
     })
     if (result.canceled || !result.filePaths[0]) return null
-    return result.filePaths[0]
+    const selected = requireExistingDirectory(result.filePaths[0])
+    trustPath(selected)
+    return selected
   })
 
   ipcMain.handle('workspace:read-file', async (_e, filePath: string) => {
-    const stat = fs.statSync(filePath)
+    const safePath = await assertReadable(filePath)
+    const stat = fs.statSync(safePath)
     if (stat.size > MAX_FILE_SIZE) {
       return { error: 'File too large', truncated: true, content: '' }
     }
-    const ext = path.extname(filePath).toLowerCase()
+    const ext = path.extname(safePath).toLowerCase()
     if (BINARY_EXTENSIONS.has(ext)) {
-      const content = fs.readFileSync(filePath).toString('base64')
-      return { content, base64: true, name: path.basename(filePath), size: stat.size }
+      const content = fs.readFileSync(safePath).toString('base64')
+      return { content, base64: true, name: path.basename(safePath), size: stat.size }
     }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    return { content, base64: false, name: path.basename(filePath), size: stat.size, truncated: content.length > 200000 }
+    const content = fs.readFileSync(safePath, 'utf-8')
+    return { content, base64: false, name: path.basename(safePath), size: stat.size, truncated: content.length > 200000 }
   })
 
   ipcMain.handle('workspace:list-directory', async (_e, dirPath: string) => {
-    return readLocalDirectory(dirPath)
+    const safePath = await assertReadable(dirPath)
+    return readLocalDirectory(safePath, safePath)
   })
 
   ipcMain.handle('workspace:search-files', async (_e, rootPath: string, query: string) => {
-    return searchDirectory(rootPath, query, 50)
+    const safeRoot = await assertReadable(rootPath)
+    if (typeof query !== 'string') throw new Error('Invalid search query.')
+    return searchDirectory(safeRoot, query, 50, safeRoot)
   })
 
   ipcMain.handle('workspace:write-file', async (_e, filePath: string, content: string) => {
-    await assertInsideWorkspace(filePath)
-    fs.writeFileSync(filePath, content)
+    const safePath = await assertInsideWorkspace(filePath)
+    fs.writeFileSync(safePath, content)
     return true
   })
 
   ipcMain.handle('workspace:create-file', async (_e, filePath: string, content: string) => {
-    await assertInsideWorkspace(filePath)
-    if (fs.existsSync(filePath)) throw new Error('File already exists')
-    fs.writeFileSync(filePath, content || '')
+    const safePath = await assertInsideWorkspace(filePath)
+    if (fs.existsSync(safePath)) throw new Error('File already exists')
+    fs.writeFileSync(safePath, content || '')
     return true
   })
 
   ipcMain.handle('workspace:create-directory', async (_e, dirPath: string) => {
-    await assertInsideWorkspace(dirPath)
-    fs.mkdirSync(dirPath, { recursive: true })
+    const safePath = await assertInsideWorkspace(dirPath)
+    fs.mkdirSync(safePath, { recursive: true })
     return true
   })
 
   ipcMain.handle('workspace:rename-file', async (_e, filePath: string, newName: string) => {
-    await assertInsideWorkspace(filePath)
-    if (path.isAbsolute(newName) || newName.includes('..')) {
+    const safeSource = await assertInsideWorkspace(filePath)
+    const safeName = sanitizeFileName(newName)
+    if (!safeName) {
       throw new Error('Invalid file name')
     }
-    const dir = path.dirname(filePath)
-    const newPath = path.join(dir, newName)
-    if (fs.existsSync(newPath)) throw new Error('Target already exists')
-    fs.renameSync(filePath, newPath)
+    const dir = path.dirname(safeSource)
+    const safeTarget = await assertInsideWorkspace(path.join(dir, safeName))
+    if (fs.existsSync(safeTarget)) throw new Error('Target already exists')
+    fs.renameSync(safeSource, safeTarget)
     return true
   })
 
   ipcMain.handle('workspace:delete-file', async (_e, filePath: string) => {
-    await assertInsideWorkspace(filePath)
-    const stat = fs.statSync(filePath)
+    const inputPath = path.resolve(validatePathInput(filePath))
+    const safePath = await assertInsideWorkspace(filePath)
+    if (fs.lstatSync(inputPath).isSymbolicLink()) {
+      fs.unlinkSync(inputPath)
+      return true
+    }
+    const stat = fs.statSync(safePath)
     if (stat.isDirectory()) {
-      fs.rmSync(filePath, { recursive: true, force: true })
+      fs.rmSync(safePath, { recursive: true, force: true })
     } else {
-      fs.unlinkSync(filePath)
+      fs.unlinkSync(safePath)
     }
     return true
   })
 
   ipcMain.handle('workspace:file-type', async (_e, filePath: string) => {
-    const stat = fs.statSync(filePath)
+    const safePath = await assertReadable(filePath)
+    const stat = fs.statSync(safePath)
     if (stat.isDirectory()) return 'directory'
-    const ext = path.extname(filePath).toLowerCase()
+    const ext = path.extname(safePath).toLowerCase()
     const types: Record<string, string> = {
       '.md': 'markdown', '.txt': 'text', '.json': 'json', '.js': 'javascript',
       '.ts': 'typescript', '.tsx': 'typescript', '.jsx': 'javascript', '.py': 'python',
@@ -211,10 +261,11 @@ export function registerWorkspaceIpc() {
   })
 
   ipcMain.handle('workspace:file-stats', async (_e, filePath: string) => {
-    const stat = fs.statSync(filePath)
+    const safePath = await assertReadable(filePath)
+    const stat = fs.statSync(safePath)
     return {
-      name: path.basename(filePath),
-      path: filePath,
+      name: path.basename(safePath),
+      path: safePath,
       size: stat.size,
       modifiedAt: stat.mtimeMs,
       createdAt: stat.birthtimeMs,
@@ -228,7 +279,9 @@ export function registerWorkspaceIpc() {
       properties: ['openFile'],
     })
     if (result.canceled || !result.filePaths[0]) return null
-    return result.filePaths[0]
+    const selected = canonicalizePath(result.filePaths[0])
+    trustPath(selected)
+    return selected
   })
 
   ipcMain.handle('dialog:select-files', async () => {
@@ -237,7 +290,9 @@ export function registerWorkspaceIpc() {
       properties: ['openFile', 'multiSelections'],
     })
     if (result.canceled) return []
-    return result.filePaths
+    const selected = result.filePaths.map((filePath) => canonicalizePath(filePath))
+    trustPaths(selected)
+    return selected
   })
 
   ipcMain.handle('dialog:select-folder', async () => {
@@ -246,7 +301,9 @@ export function registerWorkspaceIpc() {
       properties: ['openDirectory'],
     })
     if (result.canceled || !result.filePaths[0]) return null
-    return result.filePaths[0]
+    const selected = requireExistingDirectory(result.filePaths[0])
+    trustPath(selected)
+    return selected
   })
 
   ipcMain.handle('dialog:save-file', async (_e, opts: { defaultPath?: string; filterName?: string; extensions?: string[] }) => {
@@ -261,27 +318,35 @@ export function registerWorkspaceIpc() {
   })
 }
 
-function readLocalDirectory(dirPath: string) {
-  const result: any[] = []
+function readLocalDirectory(dirPath: string, workspaceRoot: string): FileEntry[] {
+  const result: FileEntry[] = []
   const entries = fs.readdirSync(dirPath, { withFileTypes: true })
   for (const entry of entries) {
-    if (entry.name.startsWith('.') && entry.name !== '.git' && entry.isDirectory()) continue
-    if (isSkippedDir(entry.name) && entry.isDirectory()) continue
     const full = path.join(dirPath, entry.name)
     try {
-      const stat = fs.statSync(full)
+      let target = full
+      if (entry.isSymbolicLink()) {
+        target = canonicalizePath(full)
+        if (!isCanonicalPathInsideRoot(target, workspaceRoot)) continue
+      }
+      const stat = fs.statSync(target)
+      const isDirectory = stat.isDirectory()
+      if (isDirectory) {
+        if (entry.name.startsWith('.') && entry.name !== '.git') continue
+        if (isSkippedDir(entry.name)) continue
+      }
       const item: FileEntry = {
         name: entry.name,
-        path: full,
-        type: entry.isDirectory() ? 'directory' : 'file',
-        size: entry.isDirectory() ? 0 : stat.size,
+        path: target,
+        type: isDirectory ? 'directory' : 'file',
+        size: isDirectory ? 0 : stat.size,
         modifiedAt: stat.mtimeMs,
       }
-      if (entry.isDirectory()) {
-        const depth = countDepth(full)
+      if (isDirectory) {
+        const depth = countDepth(target)
         if (depth < 3) {
           try {
-            item.children = readLocalDirectory(full)
+            item.children = readLocalDirectory(target, workspaceRoot)
           } catch {
             item.children = []
           }
@@ -289,7 +354,7 @@ function readLocalDirectory(dirPath: string) {
       }
       result.push(item)
     } catch {
-      // skip permission errors
+      // skip permission errors and unsafe links
     }
   }
   return result
@@ -299,7 +364,7 @@ function countDepth(p: string): number {
   return p.split(path.sep).length
 }
 
-function searchDirectory(root: string, query: string, maxResults: number): any[] {
+function searchDirectory(root: string, query: string, maxResults: number, workspaceRoot: string): any[] {
   const results: any[] = []
   const lowerQuery = query.toLowerCase()
   const stack = [root]
@@ -317,55 +382,27 @@ function searchDirectory(root: string, query: string, maxResults: number): any[]
     }
     for (const entry of entries) {
       const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        if (!isSkippedDir(entry.name) && !entry.name.startsWith('.') && stack.length < 2000) {
-          stack.push(full)
+      try {
+        let target = full
+        if (entry.isSymbolicLink()) {
+          target = canonicalizePath(full)
+          if (!isCanonicalPathInsideRoot(target, workspaceRoot)) continue
         }
-      } else {
-        if (entry.name.toLowerCase().includes(lowerQuery)) {
-          try {
-            const stat = fs.statSync(full)
-            if (stat.size < 500 * 1024) {
-              results.push({ path: full, name: entry.name, isMatch: true })
-            }
-          } catch {}
+        const stat = fs.statSync(target)
+        if (stat.isDirectory()) {
+          if (!isSkippedDir(entry.name) && !entry.name.startsWith('.') && stack.length < 2000) {
+            stack.push(target)
+          }
+        } else if (entry.name.toLowerCase().includes(lowerQuery) && stat.size < 500 * 1024) {
+          results.push({ path: target, name: entry.name, isMatch: true })
         }
+      } catch {
+        // skip unreadable and unsafe entries
       }
       if (results.length >= maxResults) break
     }
   }
   return results
-}
-
-export function readFilesForAttach(paths: string[]): AttachedFile[] {
-  return paths
-    .map((p) => {
-      try {
-        const stat = fs.statSync(p)
-        const name = path.basename(p)
-        const ext = path.extname(p).toLowerCase()
-        let content: string | undefined
-        let preview: string | undefined
-        if (stat.size <= 200 * 1024 && !BINARY_EXTENSIONS.has(ext)) {
-          content = fs.readFileSync(p, 'utf-8')
-          preview = content.slice(0, 2000)
-        } else {
-          preview = `[${ext || 'binary'} file, ${formatBytes(stat.size)}]`
-        }
-        return {
-          id: randomUUID(),
-          name,
-          path: p,
-          type: ext.replace('.', '') || 'file',
-          size: stat.size,
-          content,
-          preview,
-        }
-      } catch {
-        return null
-      }
-    })
-    .filter(Boolean) as AttachedFile[]
 }
 
 export async function getWorkspaceSettings(workspaceId: string): Promise<any> {

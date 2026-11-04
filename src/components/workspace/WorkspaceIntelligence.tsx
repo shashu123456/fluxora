@@ -1,346 +1,344 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
-  Brain,
-  Files,
-  Folders,
-  HardDrive,
-  Clock,
-  RefreshCw,
-  GitBranch,
-  GitCommit,
-  Wrench,
-  Package,
+  Activity,
+  AlertTriangle,
   BookOpen,
-  FolderTree,
-  History,
-  Boxes,
-  GitFork,
+  Brain,
+  CheckCircle2,
+  ChevronRight,
+  FileText,
+  GitBranch,
+  Layers,
+  Lightbulb,
+  Package,
+  RefreshCw,
+  Shield,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
-import type { WorkspaceIndex } from '@/types'
+import { cn, formatRelativeTime } from '@/lib/utils'
+import { useIntelligenceStore } from '@/stores/intelligenceStore'
+import { buildEvolutionChain } from '@/lib/intelligence/evolution'
+import type { ScoredMetric, TimelineEvent } from '@/types/workspaceIntelligence'
+
+const STAGE_ICON: Record<string, typeof Activity> = {
+  observation: Activity,
+  reasoning: Layers,
+  insight: Sparkles,
+  recommendation: Lightbulb,
+  learning: Brain,
+}
+
+const TIMELINE_ICON: Record<string, typeof Activity> = {
+  indexed: Layers,
+  health: Activity,
+  risk: AlertTriangle,
+  architecture: Layers,
+  documentation: BookOpen,
+  dependencies: Package,
+  repository: GitBranch,
+  recommendation: Lightbulb,
+  learning: Brain,
+}
+
+function scoreTone(score: number): string {
+  if (score >= 80) return 'text-emerald-400'
+  if (score >= 60) return 'text-fx-gold'
+  return 'text-amber-400'
+}
+
+function Section({ title, hint, action, children }: {
+  title: string
+  hint?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-baseline justify-between gap-4">
+        <div>
+          <span className="fx-caption text-muted-foreground">{title}</span>
+          {hint ? <p className="mt-0.5 text-xs text-muted-foreground/70">{hint}</p> : null}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function MetricRows({ items }: { items: { label: string; metric: ScoredMetric }[] }) {
+  return (
+    <div className="divide-y divide-border/50 border-t border-border/50">
+      {items.map(({ label, metric }) => (
+        <details key={label} className="group py-3">
+          <summary className="flex cursor-pointer list-none items-center gap-3">
+            <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+            <span className={cn('font-display text-sm tabular-nums', scoreTone(metric.score))}>{metric.score}</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform group-open:rotate-90" />
+          </summary>
+          <ul className="mt-2 space-y-1 pl-1">
+            {metric.reasons.map((reason, index) => (
+              <li key={`${reason.reason}-${index}`} className="flex items-start gap-2 text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    'mt-1.5 h-1 w-1 shrink-0 rounded-full',
+                    reason.impact === 'positive'
+                      ? 'bg-emerald-400/80'
+                      : reason.impact === 'negative'
+                        ? 'bg-amber-400/80'
+                        : 'bg-muted-foreground/50'
+                  )}
+                />
+                <span>{reason.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))}
+    </div>
+  )
+}
 
 export function WorkspaceIntelligence({ workspaceId, path }: { workspaceId: string; path?: string }) {
-  const indexes = useWorkspaceStore((s) => s.indexes)
-  const indexing = useWorkspaceStore((s) => s.indexing)
-  const getIndex = useWorkspaceStore((s) => s.getIndex)
-  const indexWorkspace = useWorkspaceStore((s) => s.indexWorkspace)
-  const [error, setError] = useState<string | null>(null)
-
-  const index: WorkspaceIndex | undefined = path ? indexes[workspaceId] : undefined
-  const isIndexing = path ? !!indexing[workspaceId] : false
+  const intel = useIntelligenceStore((s) => s.intelligence[workspaceId])
+  const recommendations = useIntelligenceStore((s) => s.recommendations[workspaceId]) || []
+  const timeline = useIntelligenceStore((s) => s.timeline[workspaceId]) || []
+  const loading = useIntelligenceStore((s) => s.loading[workspaceId])
+  const load = useIntelligenceStore((s) => s.load)
+  const refresh = useIntelligenceStore((s) => s.refresh)
 
   useEffect(() => {
-    if (!path) {
-      setError(null)
-      return
-    }
-    let cancelled = false
-    const load = async () => {
-      setError(null)
-      try {
-        const cached = await getIndex(workspaceId)
-        if (cancelled) return
-        if (!cached) await indexWorkspace(workspaceId)
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || 'Indexing failed')
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, path])
+    load(workspaceId)
+  }, [workspaceId, load])
 
-  const handleReindex = async () => {
-    setError(null)
-    try {
-      await indexWorkspace(workspaceId)
-    } catch (e: any) {
-      setError(e?.message || 'Indexing failed')
-    }
-  }
+  const evolution = useMemo(() => (intel ? buildEvolutionChain(intel, null) : []), [intel])
 
-  if (!path) {
+  if (!intel) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <Brain className="h-10 w-10 text-primary/40" />
-        <p className="text-sm text-muted-foreground">
-          Open a folder to automatically index this project.
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+        <Layers className="h-6 w-6 text-muted-foreground" />
+        <p className="font-display text-base">{loading ? 'Reading the workspace…' : 'No intelligence yet'}</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          {loading
+            ? 'Analysing architecture, health, risk and momentum.'
+            : path
+              ? 'Index this workspace to generate its intelligence profile.'
+              : 'This workspace has no folder attached.'}
         </p>
+        {!loading && path ? (
+          <button
+            onClick={() => refresh(workspaceId)}
+            className="mt-2 text-xs text-fx-gold transition-opacity hover:opacity-80"
+          >
+            Build intelligence
+          </button>
+        ) : null}
       </div>
     )
   }
 
-  if (isIndexing && !index) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <p className="text-sm text-muted-foreground">
-          Scanning project structure…
-        </p>
-      </div>
-    )
-  }
+  const healthItems = [
+    { label: 'Documentation', metric: intel.health.documentationScore },
+    { label: 'AI readiness', metric: intel.health.aiReadinessScore },
+    { label: 'Architecture', metric: intel.health.architectureScore },
+    { label: 'Code organization', metric: intel.health.codeOrganizationScore },
+    { label: 'Dependency health', metric: intel.health.dependencyHealth },
+    { label: 'Security', metric: intel.health.securityScore },
+    { label: 'Maintainability', metric: intel.health.maintainabilityScore },
+    { label: 'Performance', metric: intel.health.performanceScore },
+  ]
 
-  if (!index) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <Brain className="h-10 w-10 text-muted-foreground/30" />
-        <p className="text-sm text-muted-foreground">
-          {error || 'No project index available yet.'}
-        </p>
-        <Button variant="outline" size="sm" onClick={handleReindex} className="gap-1.5">
-          <RefreshCw className="h-3.5 w-3.5" />
-          Index now
-        </Button>
-      </div>
-    )
-  }
-
-  const totalLangCount = index.languages.reduce((acc, l) => acc + l.count, 0)
-  const depEntries = Object.entries(index.dependencies).filter(([, deps]) => Object.keys(deps).length > 0)
+  const riskItems = [
+    { label: 'Security', metric: intel.risks.securityRisk },
+    { label: 'Dependencies', metric: intel.risks.dependencyRisk },
+    { label: 'Maintenance', metric: intel.risks.maintenanceRisk },
+    { label: 'Architecture', metric: intel.risks.architectureRisk },
+    { label: 'Documentation', metric: intel.risks.documentationRisk },
+    { label: 'Configuration', metric: intel.risks.configurationRisk },
+    { label: 'Performance', metric: intel.risks.performanceRisk },
+  ]
 
   return (
-    <div className="h-full overflow-y-auto px-5 py-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Brain className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Project Intelligence</h3>
-          <Badge variant="outline" className="gap-1 text-[10px]">
-            <Clock className="h-3 w-3" />
-            indexed {formatRelativeTime(index.indexedAt)}
-          </Badge>
-          {index.durationMs !== undefined && (
-            <span className="text-[10px] text-muted-foreground">
-              in {(index.durationMs / 1000).toFixed(1)}s
-            </span>
-          )}
-        </div>
-        <Button variant="outline" size="sm" onClick={handleReindex} disabled={isIndexing} className="gap-1.5">
-          <RefreshCw className={cn('h-3.5 w-3.5', isIndexing && 'animate-spin')} />
-          Reindex
-        </Button>
-      </div>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard icon={<Files className="h-4 w-4 text-primary" />} label="Files" value={formatNumber(index.fileCount)} />
-        <StatCard icon={<Folders className="h-4 w-4 text-blue-400" />} label="Folders" value={formatNumber(index.dirCount)} />
-        <StatCard icon={<HardDrive className="h-4 w-4 text-emerald-400" />} label="Source size" value={formatBytes(index.totalSize)} />
-        <StatCard icon={<GitBranch className="h-4 w-4 text-purple-400" />} label="Git" value={index.git.isRepo ? (index.git.hasChanges ? 'dirty' : 'clean') : 'not a repo'} />
-      </div>
-
-      <div className="mb-5 space-y-4">
-        {index.git.isRepo && (
-          <Section title="Git">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="gap-1.5">
-                <GitBranch className="h-3 w-3" />
-                {index.git.branch || 'unknown branch'}
-              </Badge>
-              <Badge
-                variant={index.git.hasChanges ? 'outline' : 'secondary'}
-                className={index.git.hasChanges ? 'gap-1.5 border-amber-500/40 text-amber-500' : 'gap-1.5'}
-              >
-                <GitFork className="h-3 w-3" />
-                {index.git.hasChanges ? 'Working tree has changes' : 'Working tree clean'}
-              </Badge>
-              {index.git.lastCommit && (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <GitCommit className="h-3 w-3" />
-                  {index.git.lastCommit}
-                </span>
-              )}
+    <div className="h-full overflow-y-auto">
+      <div className="fx-reveal mx-auto max-w-5xl space-y-10 px-8 py-8">
+        <header className="flex items-start justify-between gap-6">
+          <div className="min-w-0">
+            <span className="fx-caption text-muted-foreground">Workspace intelligence</span>
+            <h1 className="mt-1 truncate font-display text-2xl">{intel.profile.projectName}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {intel.contextSummary}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <Layers className="h-3 w-3" /> {intel.architectureSummary}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <GitBranch className="h-3 w-3" /> {intel.repository.branchStatus}
+                {intel.repository.dirtyState ? ' · changes' : ' · clean'}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" /> {intel.insights.currentDevelopmentStage}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Shield className="h-3 w-3" /> {intel.insights.confidenceLevel} confidence
+              </span>
             </div>
-          </Section>
-        )}
-
-        {index.packageManagers.length > 0 && (
-          <Section title="Package managers">
-            <div className="flex flex-wrap items-center gap-2">
-              <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-              {index.packageManagers.map((pm) => (
-                <Badge key={pm} className="bg-primary/10 text-primary">
-                  {pm}
-                </Badge>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {index.frameworks.length > 0 && (
-          <Section title="Frameworks">
-            <div className="flex flex-wrap gap-1.5">
-              {index.frameworks.map((fw) => (
-                <Badge key={fw} variant="outline" className="gap-1.5 border-fx-gold/25 bg-fx-gold/5 text-fx-gold">
-                  <Boxes className="h-3 w-3" />
-                  {fw}
-                </Badge>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {index.configFiles.length > 0 && (
-          <Section title="Config files">
-            <div className="rounded-lg border border-border/50 bg-muted/30 p-2">
-              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                {index.configFiles.slice(0, 16).map((cf) => (
-                  <div key={cf.path} className="flex items-center gap-2 px-1.5 py-0.5 text-xs">
-                    <FolderTree className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{cf.name}</span>
-                  </div>
-                ))}
+          </div>
+          <div className="flex shrink-0 items-center gap-4">
+            <div className="text-right">
+              <div className={cn('font-display text-3xl tabular-nums leading-none', scoreTone(intel.health.overallWorkspaceHealth.score))}>
+                {intel.health.overallWorkspaceHealth.score}
               </div>
-              {index.configFiles.length > 16 && (
-                <div className="px-1.5 pb-1 pt-0.5 text-[10px] text-muted-foreground">
-                  +{index.configFiles.length - 16} more
-                </div>
-              )}
+              <div className="fx-caption mt-1 text-muted-foreground">overall health</div>
             </div>
-          </Section>
-        )}
+            <button
+              onClick={() => refresh(workspaceId)}
+              className="rounded-full p-2 text-muted-foreground transition-colors hover:text-fx-gold"
+              aria-label="Rebuild intelligence"
+            >
+              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            </button>
+          </div>
+        </header>
 
-        {index.languages.length > 0 && (
-          <Section title="Languages" subtitle={totalLangCount > 0 ? `${totalLangCount} source files` : undefined}>
-            <div className="space-y-2">
-              {index.languages.map((lang) => {
-                const pct = totalLangCount > 0 ? Math.round((lang.count / totalLangCount) * 100) : 0
-                return (
-                  <div key={lang.lang} className="flex items-center gap-2 text-xs">
-                    <span className="w-28 shrink-0 truncate">{lang.lang}</span>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary/70"
-                        style={{ width: `${Math.max(pct, 2)}%` }}
-                      />
-                    </div>
-                    <span className="w-12 shrink-0 text-right text-muted-foreground">{lang.count}</span>
-                  </div>
-                )
-              })}
-            </div>
+        <div className="grid gap-x-10 gap-y-10 lg:grid-cols-2">
+          <Section title="Health" hint="Every score explains itself — expand for reasons">
+            <MetricRows items={healthItems} />
           </Section>
-        )}
 
-        {depEntries.length > 0 && (
-          <Section title="Dependencies">
-            <div className="space-y-3">
-              {depEntries.slice(0, 4).map(([manager, deps]) => (
-                <div key={manager}>
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                    <Package className="h-3 w-3" />
-                    {manager}
-                    <span className="text-muted-foreground/70">({Object.keys(deps).length})</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {Object.entries(deps).slice(0, 24).map(([name, ver]) => (
-                      <Badge key={name} variant="outline" className="font-mono text-[10px]">
-                        {name}
-                        {ver !== 'latest' && <span className="ml-1 text-muted-foreground">{ver}</span>}
-                      </Badge>
-                    ))}
-                    {Object.keys(deps).length > 24 && (
-                      <span className="text-[10px] text-muted-foreground">
-                        +{Object.keys(deps).length - 24} more
-                      </span>
+          <Section title="Risk engine" hint="Lower is riskier">
+            <MetricRows items={riskItems} />
+          </Section>
+        </div>
+
+        <Section
+          title="Recommended next steps"
+          hint={`${recommendations.length} derived from current intelligence`}
+        >
+          {recommendations.length === 0 ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Nothing needs attention right now.
+            </p>
+          ) : (
+            <div className="divide-y divide-border/50 border-t border-border/50">
+              {recommendations.map((rec) => (
+                <div key={rec.id} className="group flex items-start gap-4 py-3.5">
+                  <span
+                    className={cn(
+                      'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full',
+                      rec.priority === 'high'
+                        ? 'bg-red-400'
+                        : rec.priority === 'medium'
+                          ? 'bg-amber-400'
+                          : 'bg-emerald-400'
                     )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-sm font-medium">{rec.title}</span>
+                      <span className="fx-caption text-muted-foreground">{rec.category}</span>
+                    </div>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{rec.detail}</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground/70">
+                      <span className="text-fx-gold/80">Why:</span> {rec.why}
+                    </p>
                   </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {index.readmeSnippet && (
-          <Section title="README">
-            <div className="relative rounded-lg border border-border/50 bg-muted/30 p-3">
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                <BookOpen className="h-3.5 w-3.5" />
-                {index.readme?.split(/[\\/]/).pop()}
-              </div>
-              <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground/90">
-                {index.readmeSnippet}
-                {index.readmeSnippet.length >= 500 && <span>…</span>}
-              </p>
-            </div>
-          </Section>
-        )}
-
-        {index.topStructure.length > 0 && (
-          <Section title="Structure">
-            <div className="grid gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2">
-              {index.topStructure.map((entry) => (
-                <div key={entry} className="truncate font-mono text-[11px] text-muted-foreground">
-                  <FolderTree className="mr-1.5 inline h-3 w-3 text-primary/60" />
-                  {entry}
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {index.recentFiles.length > 0 && (
-          <Section title="Recently modified">
-            <div className="rounded-lg border border-border/50 bg-muted/30 p-2">
-              {index.recentFiles.slice(0, 8).map((f) => (
-                <div
-                  key={f.path}
-                  className="flex items-center gap-2 px-1.5 py-1 text-xs hover:bg-muted"
-                >
-                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                  <span className="min-w-0 flex-1 truncate">{f.path}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {formatRelativeTime(f.modifiedAt)}
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                    {rec.metric} · {rec.impact}
                   </span>
                 </div>
               ))}
             </div>
+          )}
+        </Section>
+
+        <Section title="Evolution" hint="Observation → reasoning → insight → recommendation → learning">
+          <div className="space-y-3 border-t border-border/50 pt-4">
+            {evolution.map((step) => {
+              const Icon = STAGE_ICON[step.stage] || Activity
+              return (
+                <div key={step.stage} className="flex items-start gap-3">
+                  <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fx-gold/70" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium capitalize">{step.stage}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{step.content}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+
+        <div className="grid gap-x-10 gap-y-10 lg:grid-cols-2">
+          <Section title="Strengths">
+            <ul className="space-y-1.5 border-t border-border/50 pt-4">
+              {(intel.insights.strengths.length ? intel.insights.strengths : ['No strengths recorded yet']).map((item) => (
+                <li key={item} className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />
+                  {item}
+                </li>
+              ))}
+            </ul>
           </Section>
-        )}
+
+          <Section title="Weaknesses">
+            <ul className="space-y-1.5 border-t border-border/50 pt-4">
+              {(intel.insights.weaknesses.length ? intel.insights.weaknesses : ['No weaknesses recorded yet']).map((item) => (
+                <li key={item} className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        </div>
+
+        <Section title="Intelligence timeline" hint="What changed, when it changed">
+          {timeline.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No changes recorded yet.</p>
+          ) : (
+            <div className="space-y-3 border-t border-border/50 pt-4">
+              {timeline.slice(0, 12).map((event: TimelineEvent) => {
+                const Icon = TIMELINE_ICON[event.kind] || Activity
+                return (
+                  <div key={event.id} className="flex items-start gap-3">
+                    <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="truncate text-xs">{event.title}</p>
+                        <span className="shrink-0 text-[10px] text-muted-foreground/70">
+                          {formatRelativeTime(event.createdAt)}
+                        </span>
+                      </div>
+                      {event.detail ? (
+                        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{event.detail}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Section>
+
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/50 pt-5 text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <FileText className="h-3 w-3" /> {intel.complexity.estimatedProjectSize} · {intel.complexity.complexity} complexity
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Package className="h-3 w-3" />
+            {Object.values(intel.profile.dependencies || {}).reduce((n, map) => n + Object.keys(map || {}).length, 0)} dependencies
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <BookOpen className="h-3 w-3" />
+            {intel.profile.configFiles.length} config files
+          </span>
+          <span className="ml-auto">Generated {formatRelativeTime(intel.generatedAt)}</span>
+        </div>
       </div>
     </div>
   )
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="fx-hover-lift flex items-center gap-3 rounded-2xl border border-border/60 bg-card/40 px-3 py-2.5">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted shadow-sm">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold leading-tight">{value}</div>
-        <div className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      </div>
-    </div>
-  )
-}
-
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <Boxes className="h-3.5 w-3.5 text-primary/70" />
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-foreground/90">{title}</h4>
-        {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
-  if (n >= 10000) return `${Math.round(n / 1000)}k`
-  return String(n)
-}
+export default WorkspaceIntelligence

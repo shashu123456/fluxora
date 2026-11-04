@@ -1,17 +1,19 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TitleBar } from '@/components/layout/TitleBar'
-import { ChatView } from '@/components/chat/ChatView'
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog'
 import { AboutDialog } from '@/components/about/AboutDialog'
+import { FluxoraMark } from '@/components/brand/FluxoraMark'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProviderStore } from '@/stores/providerStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { usePromptStore } from '@/stores/promptStore'
 import { useChatStore } from '@/stores/chatStore'
+import { NAV_ITEMS, navLabel } from '@/lib/navigation'
 
+const ChatView = lazy(() => import('@/components/chat/ChatView').then((m) => ({ default: m.ChatView })))
 const MemoryView = lazy(() => import('@/components/memory/MemoryView').then((m) => ({ default: m.MemoryView })))
 const WorkspaceView = lazy(() => import('@/components/workspace/WorkspaceView').then((m) => ({ default: m.WorkspaceView })))
 const PromptsView = lazy(() => import('@/components/prompts/PromptsView').then((m) => ({ default: m.PromptsView })))
@@ -19,6 +21,8 @@ const UsageView = lazy(() => import('@/components/usage/UsageView').then((m) => 
 const SettingsView = lazy(() => import('@/components/settings/SettingsView').then((m) => ({ default: m.SettingsView })))
 const SearchView = lazy(() => import('@/components/search/SearchView').then((m) => ({ default: m.SearchView })))
 const HomeView = lazy(() => import('@/components/home/DashboardView').then((m) => ({ default: m.DashboardView })))
+const VisualizationsView = lazy(() => import('@/components/visualizations/VisualizationsView').then((m) => ({ default: m.VisualizationsView })))
+const ProfileView = lazy(() => import('@/components/developer/ProfileView').then((m) => ({ default: m.ProfileView })))
 
 export function AppLayout() {
   const activeTab = useUIStore((s) => s.activeTab)
@@ -37,7 +41,9 @@ export function AppLayout() {
   const createChat = useChatStore((s) => s.createChat)
   const [initError, setInitError] = useState<string | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
-  const [paletteOpen, setPaletteOpen] = useState(false)
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const paletteOpen = useUIStore((s) => s.paletteOpen)
+  const setPaletteOpen = useUIStore((s) => s.setPaletteOpen)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -46,11 +52,14 @@ export function AppLayout() {
       const key = e.key.toLowerCase()
       if (key === 'k') {
         e.preventDefault()
-        setPaletteOpen((v) => !v)
-      } else if (!e.shiftKey && /^[1-6]$/.test(key)) {
+        setPaletteOpen(!useUIStore.getState().paletteOpen)
+      } else if (key === 'b' && !e.shiftKey) {
         e.preventDefault()
-        const tabs = ['chat', 'search', 'workspace', 'memory', 'prompts', 'usage']
-        setActiveTab(tabs[Number(key) - 1])
+        toggleSidebar()
+      } else if (!e.shiftKey && /^[0-9]$/.test(key)) {
+        e.preventDefault()
+        const target = NAV_ITEMS[key === '0' ? 9 : Number(key) - 1]
+        if (target) setActiveTab(target.id)
       } else if (e.shiftKey && key === 'f') {
         e.preventDefault()
         setActiveTab('search')
@@ -61,7 +70,7 @@ export function AppLayout() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setActiveTab])
+  }, [setActiveTab, setPaletteOpen, toggleSidebar])
 
   useEffect(() => {
     let cancelled = false
@@ -75,10 +84,11 @@ export function AppLayout() {
           loadProviders().catch(() => {}),
           loadWorkspaces().catch(() => {}),
           loadPrompts().catch(() => {}),
-          loadChats('global').catch(() => {}),
         ])
         restoreLastProvider()
         restoreLastWorkspace()
+        const chatScope = useWorkspaceStore.getState().currentWorkspace?.id || 'global'
+        await loadChats(chatScope).catch(() => {})
         const lastChatId = useSettingsStore.getState().settings.lastChatId
         if (!cancelled && lastChatId) {
           setCurrentChat(lastChatId)
@@ -91,7 +101,8 @@ export function AppLayout() {
     }
     init()
     const unsub = window.api.onMenuNewChat?.(() => {
-      createChat({ workspaceId: 'global' })
+      const scope = useWorkspaceStore.getState().currentWorkspace?.id || 'global'
+      createChat({ workspaceId: scope })
     })
     const unsubAbout = window.api.onMenuAbout?.(() => {
       setAboutOpen(true)
@@ -120,6 +131,10 @@ export function AppLayout() {
     root.style.colorScheme = theme === 'light' ? 'light' : 'dark'
   }, [theme])
 
+  useEffect(() => {
+    document.title = `Fluxora — ${navLabel(activeTab)}`
+  }, [activeTab])
+
   const renderView = () => {
     switch (activeTab) {
       case 'home':
@@ -134,30 +149,51 @@ export function AppLayout() {
         return <UsageView />
       case 'settings':
         return <SettingsView />
+      case 'developer':
+        return <ProfileView />
       case 'search':
         return <SearchView />
+      case 'visualizations':
+        return <VisualizationsView />
       case 'chat':
-      default:
         return <ChatView />
+      default:
+        return <HomeView />
     }
   }
 
   return (
     <div className="fx-aurora flex h-screen w-screen overflow-hidden text-foreground">
+      <a
+        href="#fx-main"
+        className="sr-only z-[100] rounded-lg bg-card px-3 py-2 text-sm shadow-float focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+      >
+        Skip to content
+      </a>
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TitleBar />
         {initError && (
-          <div className="flex items-center gap-2 border-b border-border/60 bg-muted px-4 py-1.5 text-xs text-muted-foreground">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+          <div
+            role="alert"
+            className="fx-fade flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-xs text-amber-200/90"
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
             <span className="flex-1 truncate">Startup partially failed: {initError}</span>
-            <button className="shrink-0 hover:text-foreground" onClick={() => setInitError(null)}>
+            <button
+              className="shrink-0 text-amber-200/70 transition-colors hover:text-amber-100"
+              onClick={() => setInitError(null)}
+            >
               Dismiss
             </button>
           </div>
         )}
-        <main className="flex-1 overflow-hidden">
-          <Suspense fallback={<ViewFallback />}>{renderView()}</Suspense>
+        <main id="fx-main" tabIndex={-1} className="relative flex-1 overflow-hidden outline-none">
+          <Suspense fallback={<ViewFallback />}>
+            <div key={activeTab} className="fx-view-enter h-full">
+              {renderView()}
+            </div>
+          </Suspense>
         </main>
       </div>
       <OnboardingDialog />
@@ -169,8 +205,9 @@ export function AppLayout() {
 
 function ViewFallback() {
   return (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    <div className="flex h-full w-full flex-col items-center justify-center gap-4">
+      <FluxoraMark size={30} className="opacity-75 animate-pulse" />
+      <div className="fx-skeleton h-px w-24 rounded-full" />
     </div>
   )
 }

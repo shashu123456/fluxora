@@ -8,7 +8,9 @@ import {
   Copy,
   Check,
   ShieldAlert,
+  Wand2,
 } from 'lucide-react'
+import { AgentWorkflow } from '@/components/workspace/AgentWorkflow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -27,7 +29,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { cn, copyToClipboard, formatRelativeTime } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import type { TerminalCommand, GitStatus } from '@/types'
+import type { GitStatus } from '@/types'
+import type { TerminalActivityEntry } from '@/types/terminal'
 
 function getStatusColor(status: string): string {
   if (status.includes('A') || status.includes('??')) return 'text-green-500'
@@ -47,26 +50,25 @@ function getStatusLabel(status: string): string {
 
 interface TerminalSectionProps {
   cwd: string
+  workspaceId?: string
 }
 
-export function TerminalSection({ cwd }: TerminalSectionProps) {
+export function TerminalSection({ cwd, workspaceId }: TerminalSectionProps) {
   const [command, setCommand] = useState('')
   const [output, setOutput] = useState('')
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [isRunning, setIsRunning] = useState(false)
-  const [history, setHistory] = useState<TerminalCommand[]>([])
+  const [history, setHistory] = useState<TerminalActivityEntry[]>([])
   const [historyCommand, setHistoryCommand] = useState('')
   const [histIdx, setHistIdx] = useState(-1)
-  const [approval, setApproval] = useState<{ command: string; reason: string } | null>(null)
-  const [isApproving, setIsApproving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const loadHistory = useCallback(async () => {
     try {
-      const cmds = await window.api.terminal.history()
+      const cmds = workspaceId ? await window.api.terminal.history(workspaceId) : await window.api.terminal.history()
       setHistory(cmds)
     } catch {}
-  }, [])
+  }, [workspaceId])
 
   useEffect(() => {
     loadHistory()
@@ -80,15 +82,17 @@ export function TerminalSection({ cwd }: TerminalSectionProps) {
     setExitCode(null)
     setHistoryCommand(runCommand)
     try {
-      const result = await window.api.terminal.run({ command: runCommand, cwd })
-      if (result?.needsApproval) {
-        setOutput('')
-        setExitCode(null)
-        setHistoryCommand('')
-        setApproval({ command: result.command, reason: result.reason })
-        return
+      const result = await window.api.terminal.run({ command: runCommand, cwd, workspaceId })
+      try {
+        void window.api?.developer?.track('command_run', {
+          key: runCommand.trim().split(/\s+/)[0] || runCommand,
+          value: runCommand,
+          workspaceId,
+        })
+      } catch {
+        /* tracking is best-effort */
       }
-      setOutput(result.output || '')
+      setOutput(result.output || result.error || (result.cancelled ? '[Command cancelled]' : result.timedOut ? '[Command timed out]' : ''))
       setExitCode(result.exitCode)
       await loadHistory()
       setHistIdx(-1)
@@ -96,33 +100,8 @@ export function TerminalSection({ cwd }: TerminalSectionProps) {
       setOutput(err.message || 'Failed to run command')
       setExitCode(1)
     } finally {
-      if (!approval) setIsRunning(false)
-      inputRef.current?.focus()
-    }
-  }
-
-  const handleApproval = async (always: boolean) => {
-    if (!approval) return
-    setIsApproving(true)
-    try {
-      if (always) {
-        const full = await window.api.settings.get()
-        const current: string[] = Array.isArray(full['terminal.allowlist']) ? full['terminal.allowlist'] : []
-        if (!current.includes(approval.command)) {
-          await window.api.settings.update({ 'terminal.allowlist': [...current, approval.command] })
-        }
-      }
-      setApproval(null)
-      await handleRun(approval.command)
-    } catch (err: any) {
-      await window.api.notifications.create({
-        type: 'error',
-        title: 'Approval Failed',
-        message: err.message || 'Could not approve command',
-      })
-    } finally {
-      setIsApproving(false)
       setIsRunning(false)
+      inputRef.current?.focus()
     }
   }
 
@@ -231,7 +210,7 @@ export function TerminalSection({ cwd }: TerminalSectionProps) {
             <div className="flex flex-col gap-1">
               {history.map((cmd) => (
                 <div
-                  key={cmd.id}
+                  key={cmd.runId}
                   className="group flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-1.5"
                 >
                   <TerminalIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -243,7 +222,7 @@ export function TerminalSection({ cwd }: TerminalSectionProps) {
                       title={`Approved: ${cmd.approvedBy}`}
                     >
                       <ShieldAlert className="h-2.5 w-2.5" />
-                      {cmd.approvedBy === 'user' ? 'approved' : 'allowlisted'}
+                      {cmd.approvedBy === 'session' ? 'session approved' : 'approved'}
                     </Badge>
                   )}
                   {cmd.exitCode !== null && (
@@ -255,7 +234,7 @@ export function TerminalSection({ cwd }: TerminalSectionProps) {
                     </Badge>
                   )}
                   <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {formatRelativeTime(cmd.createdAt)}
+                    {formatRelativeTime(cmd.startedAt)}
                   </span>
                   <Button
                     variant="ghost"
@@ -274,41 +253,6 @@ export function TerminalSection({ cwd }: TerminalSectionProps) {
           </ScrollArea>
         </div>
       )}
-
-      <Dialog open={!!approval} onOpenChange={(v) => !v && setApproval(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-amber-500" />
-              Command approval required
-            </DialogTitle>
-            <DialogDescription>
-              This command looks destructive ({approval?.reason}). Fluxora blocks it until you confirm.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="rounded-md bg-amber-500/10 px-3 py-2">
-            <code className="font-mono text-xs text-amber-300">{approval?.command}</code>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              variant="outline"
-              onClick={() => handleApproval(true)}
-              disabled={isApproving}
-              className="gap-1.5"
-            >
-              {isApproving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Always allow
-            </Button>
-            <Button onClick={() => handleApproval(false)} disabled={isApproving} className="gap-1.5">
-              {isApproving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-              Run once
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
@@ -529,11 +473,15 @@ export function GitSection({ cwd }: GitSectionProps) {
   )
 }
 
-export function CodingAgent({ cwd }: { cwd: string }) {
+export function CodingAgent({ cwd, workspaceId, onUseInChat }: { cwd: string; workspaceId?: string; onUseInChat?: (text: string) => void }) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <Tabs defaultValue="terminal" className="flex h-full flex-col">
+      <Tabs defaultValue="agent" className="flex h-full flex-col">
         <TabsList className="mx-4 mt-2 w-fit">
+          <TabsTrigger value="agent" className="gap-1.5">
+            <Wand2 className="h-3.5 w-3.5" />
+            Agent
+          </TabsTrigger>
           <TabsTrigger value="terminal" className="gap-1.5">
             <TerminalIcon className="h-3.5 w-3.5" />
             Terminal
@@ -543,8 +491,11 @@ export function CodingAgent({ cwd }: { cwd: string }) {
             Git
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="agent" className="mt-0 flex-1 overflow-hidden px-4 pb-4">
+          <AgentWorkflow cwd={cwd} workspaceId={workspaceId} onUseInChat={onUseInChat as any} />
+        </TabsContent>
         <TabsContent value="terminal" className="mt-0 flex-1 overflow-hidden px-4 pb-4">
-          <TerminalSection cwd={cwd} />
+          <TerminalSection cwd={cwd} workspaceId={workspaceId} />
         </TabsContent>
         <TabsContent value="git" className="mt-0 flex-1 overflow-hidden px-4 pb-4">
           <GitSection cwd={cwd} />

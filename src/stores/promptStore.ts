@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { PromptTemplate } from '../types'
+import { useWorkspaceStore } from './workspaceStore'
 
 export interface PromptStore {
   prompts: PromptTemplate[]
@@ -15,8 +16,23 @@ export interface PromptStore {
   deletePrompt: (id: string) => Promise<void>
   setCategory: (cat: string | null) => void
   setSearch: (q: string) => void
-  getFilteredPrompts: () => PromptTemplate[]
-  getCategories: () => string[]
+}
+
+function computeFiltered(prompts: PromptTemplate[], selectedCategory: string | null, searchQuery: string): PromptTemplate[] {
+  let filtered = [...prompts]
+  if (selectedCategory) {
+    filtered = filtered.filter((p) => p.category === selectedCategory)
+  }
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase()
+    filtered = filtered.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.content.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q)
+    )
+  }
+  return filtered
 }
 
 export const usePromptStore = create<PromptStore>((set, get) => ({
@@ -30,9 +46,10 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
   loadPrompts: async () => {
     set({ isLoading: true })
     try {
-      const prompts = await window.api.prompts.list()
+      const wsId = useWorkspaceStore.getState().currentWorkspace?.id
+      const prompts = await window.api.prompts.list(wsId)
       const categories = [...new Set(prompts.map((p: any) => p.category).filter(Boolean))] as string[]
-      set({ prompts, categories, filteredPrompts: prompts, isLoading: false })
+      set({ prompts, categories, filteredPrompts: prompts, selectedCategory: null, searchQuery: '', isLoading: false })
     } catch {
       set({ isLoading: false })
     }
@@ -69,35 +86,16 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
   },
 
   setCategory: (cat) => {
-    set({ selectedCategory: cat })
-    get().getFilteredPrompts()
+    set((state) => ({
+      selectedCategory: cat,
+      filteredPrompts: computeFiltered(state.prompts, cat, state.searchQuery),
+    }))
   },
 
   setSearch: (q) => {
-    set({ searchQuery: q })
-    get().getFilteredPrompts()
-  },
-
-  getFilteredPrompts: () => {
-    const { prompts, selectedCategory, searchQuery } = get()
-    let filtered = [...prompts]
-    if (selectedCategory) {
-      filtered = filtered.filter((p) => p.category === selectedCategory)
-    }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.content.toLowerCase().includes(q) ||
-          p.description?.toLowerCase().includes(q)
-      )
-    }
-    set({ filteredPrompts: filtered })
-    return filtered
-  },
-
-  getCategories: () => {
-    return [...new Set(get().prompts.map((p) => p.category).filter(Boolean))] as string[]
+    set((state) => ({
+      searchQuery: q,
+      filteredPrompts: computeFiltered(state.prompts, state.selectedCategory, q),
+    }))
   },
 }))

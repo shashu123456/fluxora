@@ -4,9 +4,10 @@ import { all, get, run } from '../database'
 import { ProviderConfig, ProviderCapabilities } from '../../src/types'
 import { getDefaultProviderConfigs, fetchModelsFromProvider, fetchModelsDetailed } from '../services/ai'
 import { normalizeBaseUrl } from '../services/ai/providers'
-import { encryptSecret, decryptSecret } from '../security'
 import { detectProviderApi, buildCapabilities, probeStreaming, classifyHttpError, classifyNetworkError, DetectionResult } from '../services/ai/detect'
 import { ProviderApiKind } from '../../src/types'
+import { getSecretManager } from '../services/secrets/manager'
+import { PROVIDER_OWNER_TYPE, PROVIDER_SECRET_KIND } from '../services/secrets/metadata'
 
 const MASK = '••••••••'
 
@@ -23,14 +24,18 @@ function parseCapabilities(raw: string | null | undefined): ProviderCapabilities
   }
 }
 
-function mapRow(row: any): ProviderConfig {
+async function mapRow(row: any) {
+  const secretManager = getSecretManager()
+  const hasKey = await secretManager.hasProviderSecret(row.id)
+  const metadata = hasKey ? await secretManager.getProviderMetadata(row.id) : undefined
   return {
     id: row.id,
     name: row.name,
     type: row.type,
     baseUrl: row.base_url,
-    apiKey: maskApiKey(row.api_key),
-    hasKey: !!row.api_key,
+    apiKey: '',
+    hasKey,
+    secret: metadata,
     models: JSON.parse(row.models || '[]'),
     enabled: !!row.enabled,
     isCustom: !!row.is_custom,
@@ -42,40 +47,46 @@ function mapRow(row: any): ProviderConfig {
 }
 
 export async function migrateLegacyProviderKeys() {
-  const rows = await all<any>('SELECT id, api_key FROM providers')
-  for (const row of rows) {
-    const value = row.api_key
-    if (!value) continue
-    if (value.startsWith('enc:v1:') || value.startsWith('plain:')) continue
-    await run('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?', [encryptSecret(value), Date.now(), row.id])
-  }
+  // Legacy migration replaced by SecretManager migration
 }
 
 export function registerProviderIpc() {
   ipcMain.handle('providers:list', async () => {
     const rows = await all<any>('SELECT * FROM providers ORDER BY created_at ASC')
-    return rows.map(mapRow)
+    const result = []
+    for (const row of rows) {
+      result.push(await mapRow(row))
+    }
+    return result
   })
 
   ipcMain.handle('providers:global-list', async () => {
     const rows = await all<any>('SELECT * FROM providers WHERE enabled = 1 ORDER BY name ASC')
-    return rows.map(mapRow)
+    const result = []
+    for (const row of rows) {
+      result.push(await mapRow(row))
+    }
+    return result
   })
 
   ipcMain.handle('providers:create', async (_e, data: Partial<ProviderConfig>) => {
+    const id = data.id || randomUUID()
+    const rawKey = typeof data.apiKey === 'string' && data.apiKey ? data.apiKey : ''
     const now = Date.now()
-    const rawKey = data.apiKey && data.apiKey !== MASK ? data.apiKey : ''
-    const apiKind = data.capabilities?.apiKind || detectProviderApi(data.baseUrl || '').apiKind
-    const provider: ProviderConfig = {
-      id: randomUUID(),
-      name: data.name || 'New Provider',
-      type: data.type || apiKind,
-      baseUrl: normalizeBaseUrl(data.baseUrl || '', data.type || apiKind),
-      apiKey: maskApiKey(rawKey),
+    const secretManager = getSecretManager()
+    if (rawKey) {
+      await secretManager.setProviderSecret(id, data.type || 'custom', data.name || 'Custom Provider', rawKey)
+    }
+    const provider = {
+      id,
+      name: data.name || 'Custom Provider',
+      type: data.type || 'custom',
+      baseUrl: normalizeBaseUrl(data.baseUrl || '', data.type || 'custom'),
+      apiKey: '',
       hasKey: !!rawKey,
       models: data.models || [],
       enabled: data.enabled ?? true,
-      isCustom: data.isCustom !== undefined ? data.isCustom : true,
+      isCustom: data.isCustom ?? true,
       color: data.color,
       capabilities: data.capabilities,
       createdAt: now,
@@ -83,8 +94,12 @@ export function registerProviderIpc() {
     }
     await run(
       'INSERT INTO providers (id, name, type, base_url, api_key, models, enabled, is_custom, color, capabilities, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [provider.id, provider.name, provider.type, provider.baseUrl, encryptSecret(rawKey), JSON.stringify(provider.models), provider.enabled ? 1 : 0, provider.isCustom ? 1 : 0, provider.color, provider.capabilities ? JSON.stringify(provider.capabilities) : null, now, now]
+      [id, provider.name, provider.type, provider.baseUrl, '', JSON.stringify(provider.models), provider.enabled ? 1 : 0, provider.isCustom ? 1 : 0, provider.color, provider.capabilities ? JSON.stringify(provider.capabilities) : null, now, now]
     )
+    if (rawKey) {
+      const secret = await secretManager.getProviderMetadata(id)
+      return { ...provider, secret }
+    }
     return provider
   })
 
@@ -104,9 +119,13 @@ export function registerProviderIpc() {
         values.push(v)
       }
     }
-    if (data.apiKey !== undefined && data.apiKey !== MASK) {
-      fields.push('api_key')
-      values.push(encryptSecret(data.apiKey))
+    if (typeof data.apiKey === 'string' && data.apiKey) {
+      const secretManager = getSecretManager()
+      const row = await get<any>('SELECT type, name FROM providers WHERE id = ?', [id])
+      await secretManager.setProviderSecret(id, data.type || row?.type || 'custom', data.name || row?.name || id, data.apiKey)
+    } else if (data.apiKey === '') {
+      const secretManager = getSecretManager()
+      await secretManager.removeProviderSecret(id)
     }
     if (data.baseUrl !== undefined) {
       const existing = await get<any>('SELECT type FROM providers WHERE id = ?', [id])
@@ -136,29 +155,41 @@ export function registerProviderIpc() {
     fields.push('updated_at')
     values.push(now)
     values.push(id)
-    if (fields.length <= 1) return null
+    if (fields.length <= 1) {
+      const row = await get<any>('SELECT * FROM providers WHERE id = ?', [id])
+      return row ? await mapRow(row) : null
+    }
     await run(`UPDATE providers SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`, values)
     const row = await get<any>('SELECT * FROM providers WHERE id = ?', [id])
     return row ? mapRow(row) : null
   })
 
   ipcMain.handle('providers:delete', async (_e, id: string) => {
+    await getSecretManager().removeProviderSecret(id)
     await run('DELETE FROM providers WHERE id = ?', [id])
     return true
+  })
+
+  ipcMain.handle('providers:rotate', async (_e, id: string) => {
+    return getSecretManager().rotateProviderSecret(id)
+  })
+
+  ipcMain.handle('providers:secret-metadata', async (_e, id: string) => {
+    return getSecretManager().getProviderMetadata(id)
   })
 
   ipcMain.handle('providers:test', async (_e, id: string) => {
     const row = await get<any>('SELECT * FROM providers WHERE id = ?', [id])
     if (!row) throw new Error('Provider not found')
-    const provider = mapRow(row)
-    provider.apiKey = row.api_key ? decryptSecret(row.api_key) : ''
-    const result = await testProvider(provider)
+    const metadata = await mapRow(row)
+    const result = await getSecretManager().withProviderSecret(id, (secret) =>
+      testProvider({ ...metadata, apiKey: secret || '' } as ProviderConfig)
+    )
     if (result.ok && result.capabilities) {
-      const type = provider.type === 'custom' ? 'custom' : result.capabilities.apiKind
+      const type = metadata.type === 'custom' ? 'custom' : result.capabilities.apiKind
       await run('UPDATE providers SET capabilities = ?, type = ?, updated_at = ? WHERE id = ?', [JSON.stringify(result.capabilities), type, Date.now(), id])
-      provider.capabilities = result.capabilities
-      provider.type = type
     }
+    await getSecretManager().recordValidation(id, result.ok)
     return result
   })
 
@@ -207,11 +238,12 @@ export function registerProviderIpc() {
   ipcMain.handle('providers:list-models', async (_e, id: string) => {
     const row = await get<any>('SELECT * FROM providers WHERE id = ?', [id])
     if (!row) return []
-    const provider = mapRow(row)
-    provider.apiKey = row.api_key ? decryptSecret(row.api_key) : ''
-    const remoteModels = await fetchModelsFromProvider(provider)
+    const provider = await mapRow(row)
+    const remoteModels = await getSecretManager().withProviderSecret(id, (secret) =>
+      fetchModelsFromProvider({ ...provider, apiKey: secret || '' } as ProviderConfig)
+    )
     return {
-      local: provider.models.map((m) => m.id),
+      local: provider.models.map((m: { id: string }) => m.id),
       remote: remoteModels,
     }
   })
@@ -219,9 +251,10 @@ export function registerProviderIpc() {
   ipcMain.handle('providers:refresh-models', async (_e, id: string) => {
     const row = await get<any>('SELECT * FROM providers WHERE id = ?', [id])
     if (!row) return { ok: false, models: [] }
-    const provider = mapRow(row)
-    provider.apiKey = row.api_key ? decryptSecret(row.api_key) : ''
-    const fetched = await fetchModelsDetailed(provider)
+    const provider = await mapRow(row)
+    const fetched = await getSecretManager().withProviderSecret(id, (secret) =>
+      fetchModelsDetailed({ ...provider, apiKey: secret || '' } as ProviderConfig)
+    )
     if (fetched.length === 0) return { ok: false, models: [] }
     await run('UPDATE providers SET models = ?, updated_at = ? WHERE id = ?', [JSON.stringify(fetched), Date.now(), id])
     return { ok: true, models: fetched }

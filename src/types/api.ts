@@ -40,6 +40,8 @@ export interface FullWindowApi {
     refreshModels: (id: string) => Promise<any>
     ensureDefaults: () => Promise<any>
     getGlobalProviders: () => Promise<any[]>
+    rotate: (id: string) => Promise<any>
+    secretMetadata: (id: string) => Promise<any>
   }
 
   ai: {
@@ -50,6 +52,7 @@ export interface FullWindowApi {
     stop: (requestId: string) => void
     complete: (payload: any) => Promise<any>
     autoRoute: (payload: any) => Promise<any>
+    recommend: (payload: { task: string; workspaceId?: string }) => Promise<any>
   }
 
   memory: {
@@ -59,7 +62,7 @@ export interface FullWindowApi {
     delete: (id: string) => Promise<any>
     search: (...args: any[]) => Promise<any[]>
     toggle: (...args: any[]) => Promise<any>
-    getSettings: () => Promise<any>
+    getSettings: (workspaceId?: string) => Promise<any>
     setAutoRemember: (workspaceId: string, enabled: boolean) => Promise<any>
     autoExtract: (workspaceId: string, content: string) => Promise<any[]>
   }
@@ -71,6 +74,8 @@ export interface FullWindowApi {
     update: (id: string, data: any) => Promise<any>
     delete: (id: string) => Promise<any>
     search: (workspaceId: string, query: string) => Promise<any[]>
+    sync: (workspaceId: string) => Promise<{ sections: number; entries: number }>
+    insights: (workspaceId: string) => Promise<import('../types').BrainInsights>
   }
 
   workspace: {
@@ -92,11 +97,54 @@ export interface FullWindowApi {
     getFileStats: (p: string) => Promise<any>
     index: (workspaceId: string) => Promise<any>
     getIndex: (workspaceId: string) => Promise<any>
+    intelligence: (workspaceId: string) => Promise<import('./workspaceIntelligence').WorkspaceIntelligence | null>
+    buildIntelligence: (workspaceId: string) => Promise<import('./workspaceIntelligence').WorkspaceIntelligence | null>
   }
 
   terminal: {
-    run: (...args: any[]) => Promise<any>
-    history: (...args: any[]) => Promise<any[]>
+    run: (request: import('./terminal').TerminalRunRequest) => Promise<import('./terminal').TerminalRunResult>
+    history: (workspaceId?: string) => Promise<import('./terminal').TerminalActivityEntry[]>
+    cancel: (runId: string) => Promise<boolean>
+    activity: (workspaceId?: string) => Promise<import('./terminal').TerminalActivitySnapshot>
+    context: (workspaceId: string) => Promise<import('./terminal').TerminalContextSummary>
+    recommendations: (workspaceId: string) => Promise<import('./terminal').TerminalRecommendations>
+    onUpdated: (cb: (event: import('./terminal').TerminalUpdatedEvent) => void) => () => void
+    onOutput: (cb: (event: import('./terminal').TerminalOutputEvent) => void) => () => void
+  }
+
+  intelligence: {
+    get: (workspaceId: string) => Promise<import('./workspaceIntelligence').WorkspaceIntelligence | null>
+    rebuild: (workspaceId: string) => Promise<import('./workspaceIntelligence').WorkspaceIntelligence | null>
+    recommendations: (workspaceId: string) => Promise<import('./workspaceIntelligence').Recommendation[]>
+    timeline: (workspaceId: string, limit?: number) => Promise<import('./workspaceIntelligence').TimelineEvent[]>
+    evolve: (workspaceId: string) => Promise<import('./workspaceIntelligence').EvolutionStep[] | null>
+  }
+
+  developer: {
+    profile: () => Promise<import('./developer').DeveloperProfile>
+    insights: () => Promise<import('./developer').DeveloperInsight[]>
+    sessions: (limit?: number) => Promise<import('./developer').WorkSession[]>
+    briefing: (workspaceId?: string | null, focusHint?: string | null) => Promise<import('./developer').SessionBriefing>
+    overview: (
+      workspaceId?: string | null,
+      focusHint?: string | null
+    ) => Promise<{
+      profile: import('./developer').DeveloperProfile
+      insights: import('./developer').DeveloperInsight[]
+      briefing: import('./developer').SessionBriefing
+      sessions: import('./developer').WorkSession[]
+      personalization: import('./developer').PersonalizationProfile
+    }>
+    personalization: () => Promise<import('./developer').PersonalizationProfile>
+    affinity: () => Promise<import('./developer').RecommendationAffinity>
+    track: (kind: string, input?: any) => Promise<boolean>
+    memory: {
+      list: () => Promise<import('../types').MemoryEntry[]>
+      create: (data: Partial<import('../types').MemoryEntry>) => Promise<import('../types').MemoryEntry>
+      update: (id: string, data: Partial<import('../types').MemoryEntry>) => Promise<import('../types').MemoryEntry | null>
+      delete: (id: string) => Promise<boolean>
+    }
+    reset: (options?: { includeMemory?: boolean }) => Promise<boolean>
   }
 
   git: {
@@ -124,10 +172,12 @@ export interface FullWindowApi {
     get: () => Promise<any>
     update: (data: any) => Promise<any>
     exportAll: () => Promise<any>
-    importAll: () => Promise<any>
+    importAll: (filePath?: string) => Promise<any>
     exportAllData: () => Promise<any>
-    importAllData: () => Promise<any>
+    importAllData: (filePath?: string) => Promise<any>
+    validateImport: (filePath?: string) => Promise<any>
     reset: () => Promise<any>
+    eraseAll?: () => Promise<any>
   }
 
   backup: {
@@ -149,7 +199,7 @@ export interface FullWindowApi {
   }
 
   search: {
-    global: (query: string) => Promise<import('../types').GlobalSearchResult[]>
+    global: (query: string, workspaceId?: string) => Promise<import('../types').GlobalSearchResult[]>
   }
 
   notifications: {

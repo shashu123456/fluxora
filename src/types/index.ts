@@ -1,4 +1,8 @@
-export type WorkspaceScope = 'global' | 'workspace'
+import type { TerminalApprovalKind, TerminalRunStatus } from './terminal'
+import type { SecretMetadataExport } from './secrets'
+import type { ProviderSecretMetadata } from './secrets'
+
+export type WorkspaceScope = 'global' | 'workspace' | 'developer'
 
 export type ProviderApiKind = 'openai' | 'anthropic' | 'gemini'
 
@@ -19,6 +23,7 @@ export interface ProviderConfig {
   baseUrl: string
   apiKey: string
   hasKey?: boolean
+  secret?: ProviderSecretMetadata
   models: ModelConfig[]
   enabled: boolean
   isCustom: boolean
@@ -116,6 +121,39 @@ export interface ProjectBrainEntry {
   updatedAt: number
 }
 
+export type InsightSeverity = 'info' | 'warning' | 'critical'
+export type InsightCategory = 'change' | 'gap' | 'risk' | 'action' | 'observation'
+export type InsightConfidence = 'high' | 'medium' | 'low'
+
+export interface BrainInsight {
+  id: string
+  category: InsightCategory
+  severity: InsightSeverity
+  title: string
+  detail?: string
+  /** How strongly the evidence supports this reading. Derived, never guessed. */
+  confidence?: InsightConfidence
+  /** Short topic label used for grouping, e.g. "security", "performance". */
+  topic?: string
+  action?: {
+    kind: 'openTab' | 'openWorkspace' | 'runCommand' | 'syncBrain' | 'openFile'
+    label: string
+    payload?: Record<string, any>
+  }
+}
+
+export interface BrainInsights {
+  workspaceId: string
+  generatedAt: number
+  summary: string
+  counts: { changes: number; gaps: number; risks: number; observations: number; actions: number }
+  changes: BrainInsight[]
+  gaps: BrainInsight[]
+  risks: BrainInsight[]
+  observations: BrainInsight[]
+  nextActions: BrainInsight[]
+}
+
 export interface PromptTemplate {
   id: string
   workspaceId: string
@@ -197,18 +235,77 @@ export interface AppSettings {
   codeHighlightingEnabled: boolean
   showReasoning: boolean
   streamingEnabled: boolean
+  memoryEnabled?: boolean
+  favoriteModels?: Record<string, string>
+  terminalAllowlist?: string[]
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  theme: 'dark',
+  fontSize: 'md',
+  sidebarWidth: 280,
+  language: 'en',
+  portableMode: false,
+  autoSave: true,
+  autoBackup: true,
+  backupIntervalHours: 24,
+  restoreOnStartup: true,
+  crashRecoveryEnabled: true,
+  notificationsEnabled: true,
+  markdownEnabled: true,
+  codeHighlightingEnabled: true,
+  showReasoning: true,
+  streamingEnabled: true,
+}
+
+export type AppTab =
+  | 'home'
+  | 'chat'
+  | 'search'
+  | 'workspace'
+  | 'memory'
+  | 'prompts'
+  | 'usage'
+  | 'visualizations'
+  | 'settings'
+  | 'developer'
+
+export const APP_TABS: readonly AppTab[] = [
+  'home',
+  'chat',
+  'search',
+  'workspace',
+  'memory',
+  'prompts',
+  'usage',
+  'visualizations',
+  'settings',
+  'developer',
+] as const
+
+export function isAppTab(value: unknown): value is AppTab {
+  return typeof value === 'string' && (APP_TABS as readonly string[]).includes(value)
 }
 
 export interface TerminalCommand {
   id: string
+  runId?: string
   workspaceId: string
   command: string
   output: string
   exitCode: number | null
   cwd: string
   createdAt: number
+  startedAt?: number
+  finishedAt?: number | null
   durationMs: number
-  approvedBy?: string
+  status?: TerminalRunStatus
+  commandHash?: string
+  approvalId?: string
+  approvedBy?: TerminalApprovalKind | null
+  outputSize?: number
+  truncated?: boolean
+  cancelled?: boolean
 }
 
 export interface FileEntry {
@@ -259,7 +356,10 @@ export interface FileSearchResult {
 export interface ImportExportData {
   app: string
   version: string
+  schemaVersion?: number
   exportedAt: string
+  secretExportMode?: 'metadata-only'
+  providerSecrets?: SecretMetadataExport[]
   settings: AppSettings
   providers: ProviderConfig[]
   chats: Chat[]
@@ -344,12 +444,21 @@ export interface WorkspaceIndex {
   readmeSnippet?: string
   topStructure: string[]
   recentFiles: { path: string; modifiedAt: number }[]
+  entryPoints?: string[]
+  docs?: string[]
+  testDirs?: string[]
+  health?: WorkspaceHealth
   indexedAt: number
   durationMs?: number
 }
 
+export interface WorkspaceHealth {
+  score: number
+  signals: { key: string; label: string; ok: boolean; weight: number }[]
+}
+
 export interface GlobalSearchResult {
-  group: 'chats' | 'messages' | 'prompts' | 'memories' | 'providers' | 'models' | 'workspaces' | 'files' | 'settings' | 'terminal'
+  group: 'chats' | 'messages' | 'prompts' | 'memories' | 'providers' | 'models' | 'workspaces' | 'files' | 'settings' | 'terminal' | 'brain' | 'notifications'
   id: string
   title: string
   subtitle?: string
