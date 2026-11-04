@@ -613,11 +613,11 @@ export function SettingsView() {
                 </div>
               </div>
             )}
-            <Button onClick={handleAddProvider} className="w-full">
+            <Button onClick={handleAddProvider} className="self-start">
               <Plus className="mr-2 h-4 w-4" /> Add Provider
             </Button>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" className="flex-1" onClick={handleTestConfig} disabled={testingConfig}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={handleTestConfig} disabled={testingConfig}>
                 {testingConfig ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Test connection
               </Button>

@@ -82,7 +82,7 @@ function showSplash() {
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
-      backgroundColor: '#0b0d13',
+      backgroundColor: '#0B0B0A',
       transparent: false,
       webPreferences: {
         contextIsolation: true,
@@ -182,7 +182,7 @@ function createWindow() {
     frame: process.platform === 'darwin' ? undefined : false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
     icon: hasIcon && process.platform === 'win32' ? iconPath : undefined,
-    backgroundColor: '#0b0d13',
+    backgroundColor: '#0B0B0A',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

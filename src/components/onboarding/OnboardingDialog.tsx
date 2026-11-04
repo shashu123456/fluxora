@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { FluxoraMark } from '@/components/brand/FluxoraMark'
 import { cn } from '@/lib/utils'
 
 const DISMISS_KEY = 'ai-workspace:onboarding-dismissed'
@@ -76,7 +77,16 @@ export function OnboardingDialog() {
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleFinish() }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Welcome to AI Workspace</DialogTitle>
+          <div className="mb-3 flex items-center gap-3">
+            <FluxoraMark size={38} />
+            <div className="min-w-0">
+              <div className="fx-wordmark text-[10px] text-muted-foreground">FLUXORA</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
+                AI operating workspace
+              </div>
+            </div>
+          </div>
+          <DialogTitle>Welcome to Fluxora</DialogTitle>
           <DialogDescription>
             Connect a provider to start chatting. Your API key stays on this computer, encrypted at rest.
           </DialogDescription>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, memo, useCallback } from 'react'
 import { Send, Square, Plus, Paperclip, Copy, User, Bot, RefreshCw, X, FileText as FileTextIcon, XCircle, Settings, Star, ChevronsUpDown, Check, Upload } from 'lucide-react'
-import obsidianMarkUrl from '@/assets/fluxora-mark-obsidian.svg'
+
 import { FluxoraMark } from '@/components/brand/FluxoraMark'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chatStore'
@@ -580,13 +580,6 @@ function EmptyState({
 }) {
   return (
     <div className="relative flex flex-col items-center justify-center overflow-hidden py-20 text-center">
-      <img
-        src={obsidianMarkUrl}
-        alt=""
-        aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 opacity-[0.06] blur-[1px]"
-        draggable={false}
-      />
       <div className="pointer-events-none absolute bottom-0 h-56 w-[120%] bg-gradient-to-t from-background to-transparent" />
       <div className="relative flex flex-col items-center">
         <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#161311] to-[#080705] shadow-[0_16px_44px_-18px_rgba(216,189,132,0.45)] ring-1 ring-white/10">

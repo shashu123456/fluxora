@@ -255,7 +255,7 @@ export function DashboardView() {
             <div className="min-w-0 max-w-3xl">
               <div className="fx-caption text-fx-gold/80">{greeting()}</div>
               <h1 className="mt-1 truncate font-display text-3xl leading-tight">
-                {currentWorkspace?.name || 'Fluxora'}
+                {currentWorkspace?.name || 'Mission Control'}
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {intel?.contextSummary ||
@@ -295,8 +295,7 @@ export function DashboardView() {
           <section className="fx-enter rounded-2xl border border-fx-gold/15 bg-fx-gold/[0.04] px-6 py-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <p className="fx-caption text-fx-gold/80">{briefing.greeting}</p>
-                <p className="mt-1 font-display text-lg leading-snug">{briefing.sinceLabel}</p>
+                <p className="font-display text-lg leading-snug">{briefing.sinceLabel}</p>
                 <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
                   {briefing.lines.map((line) => (
                     <span key={line} className="flex items-center gap-1.5 text-xs text-muted-foreground">
