@@ -13,9 +13,10 @@ export function getDb(): Database {
 export async function initDatabase(databasePath?: string): Promise<void> {
   const dbPath = databasePath ?? path.join((await import('../config')).ensureDataDir(), 'aiworkspace.db')
   return new Promise((resolve, reject) => {
-    db = new Database(dbPath, (err) => {
+    const handle = new Database(dbPath, (err) => {
       if (err) {
-        reject(err)
+        // Release the handle so a damaged file is not left locked for recovery.
+        handle.close(() => reject(err))
         return
       }
       try {
@@ -28,6 +29,14 @@ export async function initDatabase(databasePath?: string): Promise<void> {
       runMigrations()
         .then(() => resolve())
         .catch(reject)
+    })
+    db = handle
+    // sqlite3 also emits asynchronous open/IO failures (e.g. SQLITE_NOTADB on a
+    // damaged file) as an 'error' event. Without a listener Node treats that as an
+    // uncaught exception and the app dies with no recovery path; surface it as a
+    // rejected init instead so the caller can offer restore or a fresh profile.
+    handle.on('error', (error) => {
+      handle.close(() => reject(error))
     })
   })
 }

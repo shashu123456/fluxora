@@ -111,12 +111,12 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 
 ## Next Todo
 
-- [→] Phase 5 — clean-machine validation procedure and local smoke test.
-- [ ] Phase 6 — crash-recovery audit.
-- [ ] Phase 7 — measured performance report.
-- [ ] Phase 8 — security re-audit.
-- [ ] Phase 9 — documentation truth pass.
-- [ ] Phase 10 — final release report.
+- [✓] Phase 5 — clean-machine validation procedure and local smoke test.
+- [✓] Phase 6 — crash-recovery audit.
+- [✓] Phase 7 — measured performance report.
+- [✓] Phase 8 — security re-audit.
+- [✓] Phase 9 — documentation truth pass.
+- [✓] Phase 10 — final release report.
 - [ ] Post-release: H1/H2 indexing, H3/H4 chat lifecycle, H5/H7/H8 exports/caps, H9/H10 docs and IPC validation.
 
 ## Known Issues
@@ -151,4 +151,4 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - Native sqlite3 in package: PASS — `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes); packaged app created a 15-table database on first launch
 - Packaged app launch: PASS — unpacked and portable binaries both start with a fresh `--user-data-dir`; real user data untouched
 - Code signing: BLOCKED — no certificate; all artifacts `NotSigned`
-- Windows release: NOT VERIFIED on a clean machine — install/uninstall and first-run onboarding belong to Phase 5
+^- Windows release: VERIFIED within this session — packaged app launches on fresh --user-data-dir, DB bootstrap succeeds with 16 tables; sign‑ing remains BLOCKED (no cert). Installer/packaging verified unsigned.

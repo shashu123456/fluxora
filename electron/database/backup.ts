@@ -287,10 +287,18 @@ export async function getBackupSettings() {
   for (const row of rows) {
     result[(row as any).key] = (row as any).value
   }
-  const settings = result.backup_settings ? JSON.parse(result.backup_settings) : {}
+  // A corrupt settings row must read as "defaults", never crash or schedule NaN.
+  let settings: { backupEnabled?: unknown; intervalHours?: unknown } = {}
+  try {
+    settings = result.backup_settings ? JSON.parse(result.backup_settings) : {}
+    if (!settings || typeof settings !== 'object') settings = {}
+  } catch {
+    settings = {}
+  }
+  const hours = Number(settings.intervalHours)
   return {
     backupEnabled: settings.backupEnabled !== false,
-    intervalHours: settings.intervalHours || 24,
+    intervalHours: Number.isFinite(hours) && hours > 0 ? hours : 24,
   }
 }
 
