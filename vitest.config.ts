@@ -14,8 +14,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
-    // Electron main-process suites must run in the node environment:
-    // `node:sqlite` and other builtins are not resolvable under jsdom.
+    // Electron main-process suites need the Node environment for native `sqlite3`.
     environmentMatchGlobs: [
       ['tests/electron/**', 'node'],
     ],

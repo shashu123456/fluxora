@@ -1,5 +1,4 @@
 import { Database } from 'sqlite3'
-import { ensureDataDir } from '../config'
 import path from 'path'
 
 let db: Database | null = null
@@ -11,10 +10,9 @@ export function getDb(): Database {
   return db
 }
 
-export function initDatabase(): Promise<void> {
+export async function initDatabase(databasePath?: string): Promise<void> {
+  const dbPath = databasePath ?? path.join((await import('../config')).ensureDataDir(), 'aiworkspace.db')
   return new Promise((resolve, reject) => {
-    const dataDir = ensureDataDir()
-    const dbPath = path.join(dataDir, 'aiworkspace.db')
     db = new Database(dbPath, (err) => {
       if (err) {
         reject(err)

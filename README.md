@@ -10,8 +10,9 @@ Fluxora brings multi-provider AI, workspace-aware context, a local project brain
 [![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-local-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/shashu123456/fluxora/actions/workflows/ci.yml/badge.svg)](https://github.com/shashu123456/fluxora/actions/workflows/ci.yml)
 
-> **Status:** Release Gate V1 in progress. Fluxora is not yet release-ready.  
+> **Status:** Release Gate V1 in progress. CI, full tests, typechecks, and production build pass. Windows packaging and clean-machine validation remain.  
 > Authoritative task board: [PROJECT_PLAN.md](PROJECT_PLAN.md) · Current state: [PROJECT_STATE.md](PROJECT_STATE.md)
 
 ## Why Fluxora
@@ -140,7 +141,7 @@ npx tsc -p tsconfig.json --noEmit
 npm test
 ```
 
-> **Known release-gate blocker:** the database test harness currently fails because it imports `node:sqlite` instead of using the production `sqlite3` layer. Phase 2 in [PROJECT_PLAN.md](PROJECT_PLAN.md) replaces it.
+The suite now runs against the production `sqlite3` database and real migrations in an isolated temporary directory. GitHub Actions runs typechecks, the full test suite, and the production build on every push and pull request.
 
 ## Project structure
 

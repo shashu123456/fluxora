@@ -94,7 +94,7 @@ Project Helios is complete and validated. Fluxora learns locally from everyday u
 
 C1 — Trusted Data & Secret Boundary is complete. RC-1 (filesystem containment), RC-2 (terminal execution), and C1 (secret boundary + backup/restore integrity + lifecycle safety) are done. There is no reversible/plaintext key fallback; provider secrets live behind one main-process boundary; backups are integrity-checked, secret-free snapshots; imports are validated and metadata-only for credentials; and the app enforces a single instance with awaited database lifecycle.
 
-Fluxora is still **not release-ready**. The next blocker is the red database test harness, followed by CI, Windows packaging, and clean-machine validation. See `PROJECT_PLAN.md` for the authoritative Release Gate V1 task board, handoff rules, and exact continuation point. `docs/PRODUCT_REVIEW.md` and `docs/PRODUCT_ROADMAP.md` remain the evidence and prioritization sources.
+Fluxora is still **not release-ready**. The database harness is green, the full suite passes, and CI is configured. The next blocker is Windows packaging and clean-machine validation. See `PROJECT_PLAN.md` for the authoritative Release Gate V1 task board, handoff rules, and exact continuation point. `docs/PRODUCT_REVIEW.md` and `docs/PRODUCT_ROADMAP.md` remain the evidence and prioritization sources.
 
 ## Current Todo
 
@@ -105,12 +105,12 @@ Fluxora is still **not release-ready**. The next blocker is the red database tes
 - [✓] PROJECT_STATE.md and product review/roadmap updated.
 - [✓] Historical reports archived and generated artifacts removed.
 - [✓] Master release plan and agent handoff created in `PROJECT_PLAN.md`.
-- [→] Release Gate V1 Phase 2 — replace the `node:sqlite` test harness with production `sqlite3` migrations and get the full suite green.
+- [✓] Release Gate V1 Phase 2 — production `sqlite3` test harness; full suite 297/297.
+- [✓] Release Gate V1 Phase 3 — CI workflow authored and locally equivalent commands verified; first remote run pending push.
+- [→] Release Gate V1 Phase 4 — Windows installer + portable packaging, native rebuild, artifact inspection, signing status.
 
 ## Next Todo
 
-- [ ] Phase 2 — database harness green using production database code and a temporary DB path.
-- [ ] Phase 3 — GitHub Actions CI for typecheck, tests, and build.
 - [ ] Phase 4 — Windows installer + portable packaging, native rebuild, artifact inspection, signing status.
 - [ ] Phase 5 — clean-machine validation procedure and local smoke test.
 - [ ] Phase 6 — crash-recovery audit.
@@ -132,7 +132,7 @@ Fluxora is still **not release-ready**. The next blocker is the red database tes
 - High: streaming `onDone` can leave `isStreaming` stuck and leak listeners; stop does not clean up; streams survive window close.
 - High: export portability is still incomplete — terminal history, brain, developer, and workspace-index tables are not included.
 - High: default provider/model presets are stale or unverifiable; refresh loses custom model metadata.
-- High: tests are red for `tests/electron/database.test.ts` (`sqlite` resolution under Vitest) and critical paths lack coverage.
+- Medium: critical paths still lack coverage beyond the current 297-test suite.
 - Medium: docs drift remains in `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, and `docs/IPC_ARCHITECTURE.md`.
 - Medium/Low: see `docs/PRODUCT_ROADMAP.md` and `docs/archive/RELEASE_READINESS_REPORT.md`.
 
@@ -143,5 +143,6 @@ Fluxora is still **not release-ready**. The next blocker is the red database tes
 - Renderer build: PASS — Vite production build after clearing `node_modules/.vite` (1912 modules transformed; renderer typecheck passed in the same script)
 - Tests (C1 targeted): PASS — dataTransferValidation 13 + secretBoundary 11 (24 tests)
 - Tests (combined trust suite): PASS — terminalSecurity 17 + securityPolicy 29 + dataTransfer 13 + secretBoundary 11 (70 tests)
-- Tests (full suite): 263 passed, 1 suite failed (`tests/electron/database.test.ts`, `sqlite` resolution under Vitest)
+- Tests (full suite): PASS — 297 tests across 17 files, including production-database coverage
+- CI: workflow configured in `.github/workflows/ci.yml`; first remote run pending push
 - Windows release: NOT VERIFIED — installers built with signing disabled and `npmRebuild:false`; clean-machine smoke test required

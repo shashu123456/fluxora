@@ -116,11 +116,12 @@ Future programs are not rejected. They are gated behind a stable, shippable foun
 | Verify database failure root cause | **Done** | `node:sqlite` unsupported by Vitest 2/Vite 5/Electron 28 |
 | Confirm remaining release blockers | **In progress** | Packaging, CI, DB harness, clean-machine smoke |
 
-### Phase 2 — Database harness green (NEXT)
+### Phase 2 — Database harness green (DONE)
 
 **Owner:** next agent
 **Priority:** P0
 **Goal:** full suite green with production database code.
+**Result:** Complete. `initDatabase(databasePath?)` added; tests use production migrations on a temp DB; 297/297 tests pass; both typechecks and production build pass.
 
 Root cause:
 
@@ -154,7 +155,9 @@ Acceptance:
 - Electron tsc PASS.
 - No test schema duplication remains.
 
-### Phase 3 — CI
+### Phase 3 — CI (DONE, remote run pending)
+
+**Result:** `.github/workflows/ci.yml` created with Windows, Node 20, `npm ci`, both typechecks, full tests, build, and artifact upload. Local equivalents pass; first remote run occurs on the next push.
 
 Create `.github/workflows/ci.yml`:
 
@@ -303,7 +306,7 @@ Phase 2 DB green
   → Phase 10 Final report
 ```
 
-Do not start Phase 3 before Phase 2 is green. Do not start packaging before the full suite is green.
+Phases 2 and 3 are complete. Packaging is next. Do not start platform programs.
 
 ---
 
@@ -311,9 +314,9 @@ Do not start Phase 3 before Phase 2 is green. Do not start packaging before the 
 
 | Issue | Severity | Status | Notes |
 |---|---|---|---|
-| Database suite red | P0 | Next | `node:sqlite` in test; fix per Phase 2 |
-| No CI | P0 | Pending | Phase 3 |
-| Windows installer unverified | P0 | Pending | Phase 4 |
+| Database suite | P0 | Fixed | Production `sqlite3` harness; 297/297 pass |
+| CI | P0 | Configured | First remote run pending next push |
+| Windows installer unverified | P0 | Next | Phase 4 |
 | No code signing certificate | Blocker | External | Document only |
 | No clean-machine test | High | Environmental | Document procedure; local smoke where possible |
 | `electron:dev` lacks `VITE_DEV_SERVER_URL` | High | Pending | Use built renderer + `start`, or fix script |
@@ -322,7 +325,7 @@ Do not start Phase 3 before Phase 2 is green. Do not start packaging before the 
 | Workspace index stops at 401 files | High | Deferred | H2 |
 | Chat scope/attachment contract bugs | High | Deferred | C3/H7 |
 | Timeline table split (`workspace_intelligence_timeline` vs `intelligence_timeline`) | High | Deferred | H1 |
-| Red database test + synthetic schema | P0 | Next | Phase 2 |
+| Test coverage beyond critical paths | Medium | Ongoing | Add during Phases 6–8 |
 | OneDrive slow builds | Environmental | Mitigation | Clear Vite cache; 600s timeout |
 | Docs drift | Medium | Ongoing | Phase 9 |
 | Historical reports clutter | Low | Cleanup | Archived now |
@@ -364,9 +367,9 @@ npm run electron:build
 
 ### Continue here
 
-**Immediate next task:** Phase 2 — fix `tests/electron/database.test.ts` using production migrations and `sqlite3`, add optional DB path injection, run full suite green, update `PROJECT_STATE.md`.
+**Immediate next task:** Phase 4 — Windows packaging. Clean stale build output, inspect `electron-builder.json`, verify native `sqlite3` packaging and `asarUnpack`, build installer + portable, inspect artifacts, and document signing as blocked/unsigned. First verify the Phase 3 CI run passes on GitHub after the next push.
 
-After Phase 2, continue Phase 3 CI. Do not start platform programs.
+Do not start platform programs.
 
 ---
 
@@ -396,7 +399,9 @@ After Phase 2, continue Phase 3 CI. Do not start platform programs.
 | 2026-11-04 | Product review + roadmap | Complete |
 | 2026-11-04 | Project cleanup + master plan | Complete; archive created; generated artifacts removed |
 | 2026-11-04 | Agent efficiency guidance + start prompt | Complete; see Sections 13–14 and `docs/AGENT_START_PROMPT.md` |
-| Next | Phase 2 database harness | Pending |
+| 2026-11-04 | Phase 2 database harness | Complete; production `sqlite3`, 297/297 pass, tsc/build pass |
+| 2026-11-04 | Phase 3 CI | Configured; first remote run pending next push |
+| Next | Phase 4 Windows packaging | Pending |
 
 ---
 

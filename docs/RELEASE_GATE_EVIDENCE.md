@@ -17,18 +17,25 @@ Append one entry per phase. Record the command, result, artifact path, and any e
 
 ## Phase 2 — Database harness
 
-Status: pending
+Status: PASS (2026-11-04)
 
-- [ ] Production `initDatabase(dbPath?)` added
-- [ ] Test uses temporary production database
-- [ ] Real migrations/tables asserted
-- [ ] Database suite PASS
-- [ ] Full suite PASS
-- [ ] Typechecks PASS
+- [x] Production `initDatabase(dbPath?)` added
+- [x] Test uses temporary production database
+- [x] Real migrations/tables asserted (15 production tables)
+- [x] Database suite PASS — 10/10
+- [x] Full suite PASS — 297/297 across 17 files
+- [x] Typechecks PASS — Electron and renderer
+- [x] Production build PASS — 1912 modules
 
 ## Phase 3 — CI
 
-Status: pending
+Status: CONFIGURED (2026-11-04); remote run pending push
+
+- Workflow: `.github/workflows/ci.yml`
+- Runner: `windows-latest`, Node 20, `npm ci`
+- Steps: Electron tsc, renderer tsc, full tests, build, artifact upload
+- Local equivalent commands: PASS
+- First GitHub Actions run: NOT VERIFIED
 
 ## Phase 4 — Packaging
 
