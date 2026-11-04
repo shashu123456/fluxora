@@ -155,9 +155,9 @@ Acceptance:
 - Electron tsc PASS.
 - No test schema duplication remains.
 
-### Phase 3 — CI (DONE, remote run pending)
+### Phase 3 — CI (DONE)
 
-**Result:** `.github/workflows/ci.yml` created with Windows, Node 20, `npm ci`, both typechecks, full tests, build, and artifact upload. Local equivalents pass; first remote run occurs on the next push.
+**Result:** `.github/workflows/ci.yml` created with Windows, Node 20, `npm ci`, both typechecks, full tests, build, and artifact upload. First GitHub Actions run passed (`41855224190`, 2m 6s).
 
 Create `.github/workflows/ci.yml`:
 
@@ -315,7 +315,7 @@ Phases 2 and 3 are complete. Packaging is next. Do not start platform programs.
 | Issue | Severity | Status | Notes |
 |---|---|---|---|
 | Database suite | P0 | Fixed | Production `sqlite3` harness; 297/297 pass |
-| CI | P0 | Configured | First remote run pending next push |
+| CI | P0 | PASS | GitHub Actions run 41855224190 |
 | Windows installer unverified | P0 | Next | Phase 4 |
 | No code signing certificate | Blocker | External | Document only |
 | No clean-machine test | High | Environmental | Document procedure; local smoke where possible |
@@ -400,7 +400,7 @@ Do not start platform programs.
 | 2026-11-04 | Project cleanup + master plan | Complete; archive created; generated artifacts removed |
 | 2026-11-04 | Agent efficiency guidance + start prompt | Complete; see Sections 13–14 and `docs/AGENT_START_PROMPT.md` |
 | 2026-11-04 | Phase 2 database harness | Complete; production `sqlite3`, 297/297 pass, tsc/build pass |
-| 2026-11-04 | Phase 3 CI | Configured; first remote run pending next push |
+| 2026-11-04 | Phase 3 CI | PASS; GitHub Actions run 41855224190 (2m 6s) |
 | Next | Phase 4 Windows packaging | Pending |
 
 ---
