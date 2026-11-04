@@ -5,11 +5,26 @@ node_modules/
 dist/
 dist-electron/
 release/
+*.tsbuildinfo
+.vite/
+node_modules/.vite/
+
+# Local runtime data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+backups/
+
+# Local agent tooling
+.opencode/
 
 # Environment
 .env
 .env.local
 .env.*.local
+!/.env.example
 
 # Editor
 .vscode/
