@@ -230,3 +230,13 @@ Each catalog sample URL was requested with `curl -m 15 -A "Fluxora/1.0"` and
 - A live request against a keyed API (TheCatAPI, CoinGecko, Hugging Face) — no credential.
 - Interactive UI behaviour of the Settings card — the repository has no UI test harness;
   the card is covered by renderer typecheck and production build only.
+
+### CI
+
+- Run `42277080373` — https://github.com/shashu123456/fluxora/actions/runs/42277080373
+- Commit `c2bf458` (`feat(api): add approval-first API discovery with a curated catalog`)
+- Conclusion: **success** (1m 54s). Steps: Set up Node, Install dependencies, Typecheck
+  Electron, Typecheck renderer, Test, Build, Upload build output — all green.
+- Only annotation: the GitHub runner's Node 20 → Node 24 deprecation notice for
+  `actions/checkout@v4`, `actions/setup-node@v4`, `actions/upload-artifact@v4`. Not a
+  failure and unrelated to this change.
