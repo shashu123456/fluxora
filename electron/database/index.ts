@@ -373,6 +373,41 @@ async function runMigrations() {
     `
     CREATE INDEX IF NOT EXISTS idx_secret_records_owner ON secret_records(owner_type, owner_id);
     `,
+    `
+    CREATE TABLE IF NOT EXISTS api_connections (
+      api_id TEXT PRIMARY KEY,
+      auth_mode TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_test_at INTEGER,
+      last_test_status TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_api_connections_enabled ON api_connections(enabled);
+    `,
+    `
+    CREATE TABLE IF NOT EXISTS api_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL,
+      api_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      method TEXT NOT NULL,
+      status_code INTEGER,
+      duration_ms INTEGER NOT NULL,
+      response_bytes INTEGER NOT NULL DEFAULT 0,
+      outcome TEXT NOT NULL,
+      error_code TEXT,
+      created_at INTEGER NOT NULL
+    );
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_api_audit_created ON api_audit_log(created_at);
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_api_audit_api ON api_audit_log(api_id);
+    `,
   ]
 
   for (const migration of migrations) {
@@ -397,5 +432,5 @@ async function runMigrations() {
 }
 
 export function getAllTables(): string[] {
-  return ['settings', 'providers', 'workspaces', 'chats', 'messages', 'memories', 'prompts', 'usage', 'notifications', 'terminal_history', 'workspace_index', 'project_brain', 'developer_events', 'work_sessions', 'secret_records']
+  return ['settings', 'providers', 'workspaces', 'chats', 'messages', 'memories', 'prompts', 'usage', 'notifications', 'terminal_history', 'workspace_index', 'project_brain', 'developer_events', 'work_sessions', 'secret_records', 'api_connections', 'api_audit_log']
 }

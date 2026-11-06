@@ -57,6 +57,16 @@ const api = {
     secretMetadata: (id: string) => ipcRenderer.invoke('providers:secret-metadata', id),
   },
 
+  apis: {
+    list: () => ipcRenderer.invoke('apis:list'),
+    get: (apiId: string) => ipcRenderer.invoke('apis:get', apiId),
+    connect: (apiId: string, secret?: string) => ipcRenderer.invoke('apis:connect', apiId, secret),
+    disconnect: (apiId: string) => ipcRenderer.invoke('apis:disconnect', apiId),
+    test: (apiId: string) => ipcRenderer.invoke('apis:test', apiId),
+    audit: (limit?: number) => ipcRenderer.invoke('apis:audit', limit),
+    catalogVersion: () => ipcRenderer.invoke('apis:catalog-version'),
+  },
+
   // Streaming AI
   ai: {
     streamChat: (payload: any) => ipcRenderer.send('ai:stream-chat', payload),

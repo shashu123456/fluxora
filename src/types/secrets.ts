@@ -1,4 +1,4 @@
-export type SecretOwnerType = 'provider' | 'oauth' | 'workspace' | 'plugin' | 'mcp' | 'ssh'
+export type SecretOwnerType = 'provider' | 'oauth' | 'workspace' | 'plugin' | 'mcp' | 'ssh' | 'api'
 
 export type SecretStorageMode = 'os' | 'local-fallback'
 

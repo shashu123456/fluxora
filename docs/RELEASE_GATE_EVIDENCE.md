@@ -187,3 +187,46 @@ Status: pending
 ## Phase 10 — Final report
 
 Status: pending
+
+---
+
+## API Discovery MVP — verification (2026-11-06)
+
+Scope: `docs/PROJECT_REALITY_API_DISCOVERY_REPORT.md` Phase 0 + Phase 1. Not part of the
+Release Gate phase sequence; recorded here so the evidence stays in one place.
+
+### Commands and results
+
+| Command | Result |
+|---------|--------|
+| `npx tsc -p electron/tsconfig.json --noEmit` | PASS — no output |
+| `npx tsc -p tsconfig.json --noEmit` | PASS — no output |
+| `npx vitest run` | PASS — 415/415 tests, 26 files (91 new) |
+| `npm run build` | PASS — Vite production build, 12.31s |
+
+Targeted runs used during development:
+
+```
+npx vitest run tests/electron/apiCatalog.test.ts tests/electron/apiSsrf.test.ts \
+  tests/electron/apiExecutor.test.ts tests/electron/apiDiscoveryDatabase.test.ts \
+  tests/electron/apiIpc.test.ts tests/electron/database.test.ts
+```
+
+### Catalog endpoint verification (no credentials, 2026-11-06)
+
+Each catalog sample URL was requested with `curl -m 15 -A "Fluxora/1.0"` and
+`Accept: application/json`.
+
+- 19 of 20 returned HTTP 200 with a JSON content type.
+- Google Books returned HTTP 429 from a shared IP; the endpoint is documented and
+  reachable, and the catalog quotes Google's published per-project quota rather than a
+  claim of unlimited use.
+- Three entries needed correction before they could pass their own test: GitHub sample
+  (renamed-repo 301), REST Countries (cross-host 301 → replaced by World Bank Data),
+  Frankfurter (cross-host 301 → canonical `api.frankfurter.dev`).
+
+### Not verified
+
+- A live request against a keyed API (TheCatAPI, CoinGecko, Hugging Face) — no credential.
+- Interactive UI behaviour of the Settings card — the repository has no UI test harness;
+  the card is covered by renderer typecheck and production build only.

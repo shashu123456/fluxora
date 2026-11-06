@@ -4,6 +4,7 @@ import fs from 'fs'
 import { initDatabase, closeDatabase, getDb } from './database'
 import { registerChatIpc } from './ipc/chat'
 import { registerProviderIpc } from './ipc/providers'
+import { registerApisIpc } from './ipc/apis'
 import { migrateLegacyProviderSecrets } from './services/secrets/migration'
 import { registerMemoryIpc } from './ipc/memory'
 import { registerBrainIpc } from './ipc/brain'
@@ -279,6 +280,7 @@ app.whenReady().then(async () => {
   try {
     registerChatIpc()
     registerProviderIpc()
+    registerApisIpc()
     registerMemoryIpc()
     registerBrainIpc()
     registerWorkspaceIpc()

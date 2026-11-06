@@ -1,7 +1,7 @@
 # Fluxora Master Project Plan
 
 **Status:** Active
-**Updated:** 2026-11-04
+**Updated:** 2026-11-06
 **Owner:** Product engineering
 **Purpose:** Single source of truth for what is done, what comes next, and how a new agent should continue without re-discovering the project.
 
@@ -57,6 +57,8 @@ Historical reports are archived in `docs/archive/` and are **not** current truth
 - Full suite: RED only because of `tests/electron/database.test.ts`.
 - Windows installer: NOT VERIFIED.
 - Git: one historical commit; no remote configured. Do not commit/push without explicit request.
+- Tests (current): 415 passing across 26 files.
+- API Discovery MVP (Phase 0 + Phase 1): **complete** — see §3b.
 
 ### Verified commands
 
@@ -66,6 +68,30 @@ npx tsc -p tsconfig.json --noEmit
 npx vitest run tests/electron/terminalSecurity.test.ts tests/electron/securityPolicy.test.ts tests/electron/dataTransferValidation.test.ts tests/electron/secretBoundary.test.ts
 npm run build:renderer
 ```
+
+---
+
+## 3b. API Discovery MVP (DONE)
+
+Status: **complete**. Phase 0 (catalog, browse, evaluate, audit) and Phase 1 (one explicit
+live test path) are implemented; nothing beyond them was started.
+
+- Catalog: `electron/services/apiDiscovery/catalog.ts`, v1.0.0, 20 APIs, 6 categories.
+- Guards: `ssrf.ts` (HTTPS/port/URL rules, private and reserved ranges including
+  IPv4-mapped IPv6, pinned DNS), `executor.ts` (GET only, same-host redirects max 3, 10s,
+  1 MB, content-type allowlist, rate limits).
+- Audit and secrets: `audit.ts` (path-only rows, 500 cap), `secrets.ts` (`api` owner type in
+  the existing vault).
+- Surface: seven `apis:*` IPC handlers, preload `window.api.apis`, Settings card with the
+  Beta badge.
+- Gates: both typechecks PASS, `npx vitest run` 415/415 PASS, `npm run build` PASS.
+- Docs: `docs/API_DISCOVERY.md`, `docs/API_DISCOVERY_SECURITY.md`,
+  `docs/API_DISCOVERY_DEMO.md`, `CHANGELOG.md`.
+- Explicitly not built: autonomous discovery, crawling, MCP, OAuth, mutations, codegen,
+  marketplace, background health checks, LLM consumption of responses.
+
+**Release Gate Phase 4 (packaging) remains the next release task.** Do not start it, and do
+not expand API Discovery, without an explicit request.
 
 ---
 

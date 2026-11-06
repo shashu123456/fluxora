@@ -27,6 +27,16 @@ export interface FullWindowApi {
     importChat: () => Promise<any>
   }
 
+  apis: {
+    list: () => Promise<any>
+    get: (apiId: string) => Promise<any>
+    connect: (apiId: string, secret?: string) => Promise<any>
+    disconnect: (apiId: string) => Promise<any>
+    test: (apiId: string) => Promise<any>
+    audit: (limit?: number) => Promise<any>
+    catalogVersion: () => Promise<any>
+  }
+
   providers: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<any>

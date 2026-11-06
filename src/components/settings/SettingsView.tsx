@@ -25,6 +25,7 @@ import {
   Cpu, Database, HardDrive, Activity, FolderOpen, Settings,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { ApiDiscoverySettings } from '@/components/settings/ApiDiscoverySettings'
 
 const CATEGORIES: { id: string; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -37,6 +38,7 @@ const CATEGORIES: { id: string; label: string }[] = [
 
 const CARD_META: Record<string, { cat: string; label: string; keywords: string[] }> = {
   providers: { cat: 'providers', label: 'Providers', keywords: ['ai', 'model', 'api', 'provider', 'connection'] },
+  apiDiscovery: { cat: 'providers', label: 'API Discovery', keywords: ['api', 'discovery', 'catalog', 'integration', 'endpoint', 'key', 'weather'] },
   diagnostics: { cat: 'providers', label: 'Provider Diagnostics', keywords: ['diagnostic', 'status', 'latency', 'health'] },
   general: { cat: 'general', label: 'General', keywords: ['preference', 'theme', 'token', 'streaming', 'memory', 'notification', 'display', 'language'] },
   workspace: { cat: 'data', label: 'Workspace Information', keywords: ['workspace', 'project', 'folder', 'index'] },
@@ -804,6 +806,10 @@ export function SettingsView() {
             )}
           </CardContent>
         </Card>
+        )}
+
+        {visible(CARD_META.apiDiscovery) && (
+          <ApiDiscoverySettings />
         )}
 
         {visible(CARD_META.diagnostics) && (

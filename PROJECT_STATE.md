@@ -108,6 +108,7 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - [✓] Release Gate V1 Phase 2 — production `sqlite3` test harness; full suite 297/297.
 - [✓] Release Gate V1 Phase 3 — CI workflow authored; GitHub Actions run `41855224190` passed.
 - [✓] Release Gate V1 Phase 4 — Windows installer + portable built; native sqlite3 unpacked and proven loadable in the packaged app; metadata/icon verified; signing documented as BLOCKED.
+- [✓] API Discovery MVP (Phase 0 + Phase 1) — curated 20-API catalog, approval-gated executor, SSRF guards, vault-backed keys, audit log, Settings card, 91 tests.
 
 ## Next Todo
 
@@ -128,11 +129,11 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - Secrets residual: backups and exports intentionally omit credential values, so restoring on a new machine requires re-entering provider keys; the local fallback vault key is machine-bound.
 - Terminal residual: approvals are held in memory, session approval lasts 8 hours, and the native process-tree kill/hard-link race is not covered by an automated integration test.
 - Filesystem residual: canonical validation is check-then-use, so a local race or hard link can still redirect a write; workspace roots are canonicalized but missing/non-directory legacy roots are tolerated; root replacement is not locked.
-- Filesystem residual: `readLocalDirectory` depth calculation still limits the file tree to one level (H2); `workspace:read-file` still returns full text for 200KB-5MB while flagging truncation only above 200K; `getWorkspaceSettings` still parses JSON unguarded.
+- Filesystem (fixed in this pass): tree depth is measured relative to the workspace root (12 levels, 20k-entry budget) instead of absolute path segments, so trees expand past the first level; `workspace:read-file` clamps text at 200k characters and reports truncation accurately; `getWorkspaceSettings` and `mapRow` tolerate malformed settings JSON. Covered by `tests/electron/fsLimits.test.ts`.
 - High: workspace indexing stops at ~400 recent files; file tree recursion never passes the first level.
-- High: chat provider/model updates silently fail; message update can bind objects to SQLite; deep child messages are orphaned on delete.
-- High: streaming `onDone` can leave `isStreaming` stuck and leak listeners; stop does not clean up; streams survive window close.
-- High: export portability is still incomplete — terminal history, brain, developer, and workspace-index tables are not included.
+- Chat persistence (fixed in this pass): `chat:update` maps camelCase onto columns so provider/model changes persist; `chat:update-message` serialises `files`/`usage` before binding; deleting a message removes the whole descendant branch via a recursive CTE. Covered by `tests/electron/chatMapping.test.ts`.
+- Streaming (fixed in this pass): `onDone` resets streaming state in a `finally` even when persistence or usage recording fails; listener cleanup runs on stop, unmount, new stream and error; the main process aborts a stream when its window is destroyed.
+- Export portability (fixed in this pass): terminal history, project brain, developer events, work sessions and the workspace index are exported and imported; schema version 2 still accepts v1 files. Covered by `tests/electron/dataTransferPortability.test.ts`.
 - High: default provider/model presets are stale or unverifiable; refresh loses custom model metadata.
 - Medium: critical paths still lack coverage beyond the current 297-test suite.
 - Medium: docs drift remains in `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, and `docs/IPC_ARCHITECTURE.md`.
@@ -145,10 +146,58 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - Renderer build: PASS — Vite production build after clearing `node_modules/.vite` (1912 modules transformed; renderer typecheck passed in the same script)
 - Tests (C1 targeted): PASS — dataTransferValidation 13 + secretBoundary 11 (24 tests)
 - Tests (combined trust suite): PASS — terminalSecurity 17 + securityPolicy 29 + dataTransfer 13 + secretBoundary 11 (70 tests)
-- Tests (full suite): PASS — 297 tests across 17 files, including production-database coverage
+- Tests (full suite): PASS — 415 tests across 26 files, including production-database coverage (the 91 API Discovery tests were added in this pass)
 - CI: PASS — GitHub Actions run `41855922082` (Windows, Node 20; 1m 13s)
 - Windows packaging: PASS (unsigned) — `Fluxora-Setup-1.0.0.exe` 104.9 MiB and `Fluxora-Portable-1.0.0.exe` 104.7 MiB; ProductName `Fluxora`, version `1.0.0`, icon matches `build/icon.ico`
 - Native sqlite3 in package: PASS — `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes); packaged app created a 15-table database on first launch
 - Packaged app launch: PASS — unpacked and portable binaries both start with a fresh `--user-data-dir`; real user data untouched
 - Code signing: BLOCKED — no certificate; all artifacts `NotSigned`
 ^- Windows release: VERIFIED within this session — packaged app launches on fresh --user-data-dir, DB bootstrap succeeds with 16 tables; sign‑ing remains BLOCKED (no cert). Installer/packaging verified unsigned.
+
+---
+
+## API Discovery MVP (Phase 0 & 1) — COMPLETE
+
+Implemented as specified in `docs/PROJECT_REALITY_API_DISCOVERY_REPORT.md`: a curated,
+approval-first catalog with one live test path, no autonomy.
+
+**Shipped**
+
+- `electron/services/apiDiscovery/catalog.ts` — catalog v1.0.0, 20 entries, 6 categories,
+  `verifiedAt` 2026-11-06 after probing every sample endpoint.
+- `electron/services/apiDiscovery/ssrf.ts` — HTTPS/port/credential/fragment checks, IPv4 +
+  IPv6 private/reserved blocklist (including IPv4-mapped), pinned DNS lookup.
+- `electron/services/apiDiscovery/executor.ts` — GET-only, manual same-host redirects (max
+  3), 10s timeout, 1 MB cap, JSON/plain-text allowlist, per-API and global rate limits.
+- `electron/services/apiDiscovery/audit.ts` — path-only rows, 500-row retention.
+- `electron/services/apiDiscovery/secrets.ts` — `api` owner type inside the existing
+  `secret_records` vault (no second secret system).
+- `electron/ipc/apis.ts` + preload `window.api.apis` — seven handlers, none accepts a URL,
+  host, method, headers, or body.
+- Migration additions: `api_connections`, `api_audit_log`, three indexes; `getAllTables()`
+  updated so export/erase include them.
+- `src/components/settings/ApiDiscoverySettings.tsx` mounted as a Settings card with the
+  Beta badge, search, three filters, detail panel, connect/remove, confirm-then-test, and
+  the audit table.
+
+**Tests added (91)**
+
+| File | Tests | Covers |
+|------|-------|--------|
+| `tests/electron/apiCatalog.test.ts` | 8 | count, categories, uniqueness, HTTPS, sample-path rules, ISO dates, no "unlimited" claims |
+| `tests/electron/apiSsrf.test.ts` | 48 | 30 blocked addresses, 5 allowed, hostname rules, URL rules, resolver rejects, pinning |
+| `tests/electron/apiExecutor.test.ts` | 19 | URL building, auth headers, timeout, 1 MB cap, content type, redirects, rate limits, audit rows |
+| `tests/electron/apiDiscoveryDatabase.test.ts` | 7 | tables, indexes, no secret/body columns, audit ordering and pruning |
+| `tests/electron/apiIpc.test.ts` | 9 | channel set, unknown ids, injection attempts, secret validation, no secret leakage |
+
+**Gates** — both typechecks PASS, `npx vitest run` 415/415 PASS (26 files), `npm run build`
+PASS.
+
+**Known gaps**
+
+- No live keyed request was executed (no third-party credential available); keyed paths use
+  injected secrets and injected transports.
+- Keyless live verification: 19/20 endpoints returned JSON 200; Google Books returned 429
+  from a shared IP.
+- No UI automation harness exists in this repo, so the Settings card is verified by build +
+  review, not by a headless render test.
