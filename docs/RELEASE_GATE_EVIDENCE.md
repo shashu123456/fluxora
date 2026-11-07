@@ -14,10 +14,9 @@ Status is dated where it was established, and every NOT VERIFIED / BLOCKED item 
 
 ### Counts
 
-- Committed test files / tests (against the two snapshots above): 23 files / 395 tests.
-- Working tree at capture time: 29 files / 434 tests.
-- Net new test files since the committed baseline: 6 files.
-- Net new tests since the committed baseline: 41 tests.
+- Committed test files / tests (against the committed baseline on `main`): 23 files / 395 tests.
+- Working tree at capture time: 23 files / 399 tests (one transient timeout in `tests/electron/apiDiscoveryDatabase.test.ts` that passes when re-run in isolation, 7/7).
+- The uncommitted pre-existing API Discovery feature files were set aside; the release commit only contains packaging/doc changes.
 
 ### Why the working tree differs from the committed baseline
 
@@ -175,6 +174,7 @@ Verified this pass:
 - Production build green (`npm run build`).
 - `npm run electron:build` produces `Fluxora-Setup-1.0.0.exe` (103,877,648 bytes) and `Fluxora-Portable-1.0.0.exe` (103,615,374 bytes).
 - `win-unpacked/Fluxora.exe` exists (176,834,048 bytes).
+- Portable executable (`Fluxora-Portable-1.0.0.exe`) launched and verified: process starts, database created at `%APPDATA%/ai-workspace/data/aiworkspace.db` (241,664 bytes, valid SQLite with `api_connections` and `api_audit_log` tables), process exits cleanly on timeout.
 - Native sqlite3 packaging reproducible: `@electron/rebuild -v 28.2.0 --module-dir . -f sqlite3` rebuilds `node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes); packaged at `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node`.
 - `npm ci` works; native rebuild + packaging command sequence is in `package.json` `electron:build` script.
 - Windows packaging CI job added: `.github/workflows/windows-packaging.yml`.
@@ -184,9 +184,20 @@ Not verified:
 - Step 4 live keyed test (no token).
 - Live-app visual smoke (browser/preview tools cannot reach native Electron window).
 - Install/uninstall smoke in a clean Windows profile or VM (no clean machine available locally).
-- Portable executable launch smoke (`Fluxora-Portable-1.0.0.exe` not launched).
+- Portable executable launch smoke: **VERIFIED** — `Fluxora-Portable-1.0.0.exe` launched, database created, process exits cleanly.
 
 Signing: NotSigned — no code signing certificate exists on this machine; all three `.exe` artifacts are explicitly NotSigned. Signed Windows packaging on a clean machine is a Phase 4 requirement that remains BLOCKED.
+
+## GitHub Actions runs (current, head SHA 435a39fb1a46e6ad24d182192a0eeacd0c0fe3d1)
+
+- CI run 42404511437 — `Fix Windows packaging CI: assert correct .exe artifacts, pass GH_TOKEN to electron-builder` — **success**
+  - Job `Typecheck, test, and build` (ID 128497726437) — success in 1m33s: Typecheck Electron, Typecheck renderer, Test, Build, Upload build output all passed
+- Windows Packaging run 42404511450 — same commit — **success**
+  - Job `Build Windows installer and portable` (ID 128497726178) — success in 3m26s: all 15 steps passed including Typecheck Electron, Typecheck renderer, Test, Build, Rebuild native sqlite3, Verify sqlite3 binding, Build Windows installer and portable, Assert release artifacts exist, Upload installer artifact, Upload portable artifact, Upload build logs
+- CI run 42404011086 — `Fix: revert chat.ts/workspace.ts to parent commit to remove broken imports` — **success**
+- Windows Packaging run 42404011043 — failed (GH_TOKEN missing, wrong artifact paths); fixed in 435a39f
+
+GitHub Actions is configured and passing. .github/workflows/ci.yml and .github/workflows/windows-packaging.yml both have green runs on current HEAD.
 
 ## Residual risks to carry into the next gate decision
 
@@ -203,7 +214,28 @@ Signing: NotSigned — no code signing certificate exists on this machine; all t
 
 ## Artifacts
 
-- Artifacts produced via `npm run electron:build` (with `@electron/rebuild` in the script for reproducibility):\n- `release/Fluxora-Setup-1.0.0.exe` — NSIS installer (103,877,648 bytes / 99.1 MiB; SHA-256 `21424b1d87326426f74500bd86ad56da2acd95deb10f4efeb8de321d30c07f13`; NotSigned)\n- `release/Fluxora-Portable-1.0.0.exe` — portable executable (103,615,374 bytes / 98.8 MiB; SHA-256 `cfd0d12b43021f56a281b2791a2c740b6fa0cb22b6e4d785178952a1a1d48dc1`; NotSigned)\n- `release/win-unpacked/Fluxora.exe` — unpacked portable (176,834,048 bytes / 168.7 MiB; SHA-256 `cab3214898bcb120198253492bb77637e613bba915b1834b65f43be7086d2b32`; NotSigned)\n  - Artifact inventory: installer + portable .exe both present; portable unpacked directory contains `Fluxora.exe` plus electron runtime, Chromium assets, and unpacked native modules.\n  - Native sqlite3 unpacked and verified at `release/win-unpacked/resources/app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes; rebuilt with `@electron/rebuild -v 28.2.0`).\n  - Version/product metadata: ProductName `Fluxora`, version `1.0.0`, icon `build/icon.ico`.\n  - No stale debug files packaged: `builder-debug.yml` is the only non-artifact file; no `*.tsbuildinfo` or `dist-electron/*debug*` files.\n  - Signing status explicit: all three `.exe` artifacts are `NotSigned`.
+- Artifacts produced via `npm run electron:build` (with `@electron/rebuild` in the script for reproducibility):\nArtifacts produced via `npm run electron:build` (with `@electron/rebuild` in the script for reproducibility):
+
+- `release/Fluxora-Setup-1.0.0.exe` — NSIS installer
+  - Size: 103,877,648 bytes (99.1 MiB)
+  - SHA-256: `21424B1D87326426F74500BD86AD56DA2ACD95DEB10F4EFEB8DE321D30C07F13`
+  - Signature: NotSigned
+- `release/Fluxora-Portable-1.0.0.exe` — portable executable
+  - Size: 103,615,374 bytes (98.8 MiB)
+  - SHA-256: `CFD0D12B43021F56A281B2791A2C740B6FA0CB22B6E4D785178952A1A1D48DC1`
+  - Signature: NotSigned
+- `release/win-unpacked/Fluxora.exe` — unpacked portable
+  - Size: 176,834,048 bytes (168.6 MiB)
+  - SHA-256: `CAB3214898BCB120198253492BB77637E613BBA915B1834B65F43BE7086D2B32`
+  - Signature: NotSigned
+
+Artifact inventory:
+- Installer + portable .exe both present
+- Portable unpacked directory contains `Fluxora.exe` plus Electron runtime, Chromium assets, and unpacked native modules
+- Native sqlite3 unpacked and verified at `release/win-unpacked/resources/app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes; rebuilt with `@electron/rebuild -v 28.2.0`)
+- Version/product metadata: ProductName `Fluxora`, version `1.0.0`, icon `build/icon.ico`
+- No stale debug files packaged: `builder-debug.yml` is the only non-artifact file; no `*.tsbuildinfo` or `dist-electron/*debug*` files
+- Signing status explicit: all three `.exe` artifacts are `NotSigned`
 
 ## What "completed" means for this snapshot
 
