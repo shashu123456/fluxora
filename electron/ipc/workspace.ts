@@ -5,7 +5,6 @@ import { Workspace, FileEntry } from '../../src/types'
 import path from 'path'
 import fs from 'fs'
 import { isSkippedDir, BINARY_EXTENSIONS } from './shared'
-import { canDescend, clampText } from './fsLimits'
 import {
   assertPathAllowed,
   assertPathInsideRoots,
@@ -17,21 +16,12 @@ import {
   validatePathInput,
 } from '../security-policy'
 
-function parseSettings(raw: unknown): any {
-  if (typeof raw !== 'string' || !raw.trim()) return undefined
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return undefined
-  }
-}
-
 function mapRow(row: any): Workspace {
   return {
     id: row.id,
     name: row.name,
     path: row.path,
-    settings: parseSettings(row.settings),
+    settings: row.settings ? JSON.parse(row.settings) : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     color: row.color,
@@ -41,9 +31,6 @@ function mapRow(row: any): Workspace {
 }
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
-const MAX_TEXT_CHARS = 200_000
-const MAX_TREE_DEPTH = 12
-const MAX_TREE_ENTRIES = 20_000
 
 async function workspaceRoots(): Promise<Array<string | null>> {
   const workspaces = await all<{ path: string | null }>('SELECT path FROM workspaces WHERE path IS NOT NULL')
@@ -187,15 +174,13 @@ export function registerWorkspaceIpc() {
     if (stat.size > MAX_FILE_SIZE) {
       return { error: 'File too large', truncated: true, content: '' }
     }
-    const name = path.basename(safePath)
     const ext = path.extname(safePath).toLowerCase()
     if (BINARY_EXTENSIONS.has(ext)) {
       const content = fs.readFileSync(safePath).toString('base64')
-      return { content, base64: true, name, size: stat.size }
+      return { content, base64: true, name: path.basename(safePath), size: stat.size }
     }
-    const raw = fs.readFileSync(safePath, 'utf-8')
-    const content = clampText(raw, MAX_TEXT_CHARS)
-    return { content, base64: false, name, size: stat.size, truncated: content.length < raw.length }
+    const content = fs.readFileSync(safePath, 'utf-8')
+    return { content, base64: false, name: path.basename(safePath), size: stat.size, truncated: content.length > 200000 }
   })
 
   ipcMain.handle('workspace:list-directory', async (_e, dirPath: string) => {
@@ -333,20 +318,10 @@ export function registerWorkspaceIpc() {
   })
 }
 
-interface TreeBudget {
-  remaining: number
-}
-
-function readLocalDirectory(
-  dirPath: string,
-  workspaceRoot: string,
-  budget: TreeBudget = { remaining: MAX_TREE_ENTRIES }
-): FileEntry[] {
+function readLocalDirectory(dirPath: string, workspaceRoot: string): FileEntry[] {
   const result: FileEntry[] = []
-  if (budget.remaining <= 0) return result
   const entries = fs.readdirSync(dirPath, { withFileTypes: true })
   for (const entry of entries) {
-    if (budget.remaining <= 0) break
     const full = path.join(dirPath, entry.name)
     try {
       let target = full
@@ -360,7 +335,6 @@ function readLocalDirectory(
         if (entry.name.startsWith('.') && entry.name !== '.git') continue
         if (isSkippedDir(entry.name)) continue
       }
-      budget.remaining -= 1
       const item: FileEntry = {
         name: entry.name,
         path: target,
@@ -368,11 +342,14 @@ function readLocalDirectory(
         size: isDirectory ? 0 : stat.size,
         modifiedAt: stat.mtimeMs,
       }
-      if (isDirectory && canDescend(workspaceRoot, target, MAX_TREE_DEPTH)) {
-        try {
-          item.children = readLocalDirectory(target, workspaceRoot, budget)
-        } catch {
-          item.children = []
+      if (isDirectory) {
+        const depth = countDepth(target)
+        if (depth < 3) {
+          try {
+            item.children = readLocalDirectory(target, workspaceRoot)
+          } catch {
+            item.children = []
+          }
         }
       }
       result.push(item)
@@ -383,6 +360,9 @@ function readLocalDirectory(
   return result
 }
 
+function countDepth(p: string): number {
+  return p.split(path.sep).length
+}
 
 function searchDirectory(root: string, query: string, maxResults: number, workspaceRoot: string): any[] {
   const results: any[] = []
@@ -427,5 +407,5 @@ function searchDirectory(root: string, query: string, maxResults: number, worksp
 
 export async function getWorkspaceSettings(workspaceId: string): Promise<any> {
   const row = await get<any>('SELECT settings FROM workspaces WHERE id = ?', [workspaceId])
-  return parseSettings(row?.settings) ?? {}
+  return row?.settings ? JSON.parse(row.settings) : {}
 }
