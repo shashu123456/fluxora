@@ -1,4 +1,8 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent as _IpcMainInvokeEvent } from 'electron'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type IpcMainInvokeEvent = any
+
 import { all, get, run } from '../database'
 import {
   API_CATALOG,
@@ -26,6 +30,34 @@ function ok<T>(data: T): ApiResult<T> {
 function fail<T>(error: unknown): ApiResult<T> {
   const { code, message } = toApiError(error)
   return { ok: false, error: { code, message } }
+}
+
+/**
+ * Only the app's own renderer may call these handlers. The packaged app loads
+ * from file://, development from the Vite loopback server.
+ */
+const TRUSTED_SENDER = /^(http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/|file:\/\/.*\/index\.html(?:[?#].*)?$)/
+
+function assertTrustedSender(event: IpcMainInvokeEvent | undefined): void {
+  const url = event?.senderFrame?.url
+  if (!url || !TRUSTED_SENDER.test(url)) {
+    throw new ApiDiscoveryError('untrusted_sender', 'This request did not come from the Fluxora window.')
+  }
+}
+
+/** Wraps every handler with sender validation and typed error mapping. */
+function handle(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown>
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      assertTrustedSender(event)
+      return await listener(event, ...args)
+    } catch (error) {
+      return fail(error)
+    }
+  })
 }
 
 function requireEntry(apiId: unknown) {
@@ -56,7 +88,9 @@ async function connectionRow(apiId: string): Promise<any | null> {
 function connectionView(apiId: string, row: any | null, fingerprint: string | null): ApiConnectionView {
   return {
     apiId,
-    connected: !!fingerprint || !!row,
+    // An API is only "connected" while a stored secret still exists. Disabling
+    // the row is a local preference flag; the secret is what authorizes tests.
+    connected: !!fingerprint,
     enabled: row ? !!row.enabled : false,
     fingerprint,
     lastTestAt: row?.last_test_at ?? null,
@@ -65,7 +99,7 @@ function connectionView(apiId: string, row: any | null, fingerprint: string | nu
 }
 
 export function registerApisIpc() {
-  ipcMain.handle('apis:list', async (): Promise<ApiResult<ApiCatalogView[]>> => {
+  handle('apis:list', async (): Promise<ApiResult<ApiCatalogView[]>> => {
     try {
       const rows = await all<any>('SELECT * FROM api_connections')
       const byId = new Map(rows.map((row) => [row.api_id, row]))
@@ -81,6 +115,7 @@ export function registerApisIpc() {
           risk: entry.risk,
           tags: entry.tags,
           verifiedAt: entry.verifiedAt,
+          verification: entry.verification,
           authType: entry.auth.type === 'none' ? 'none' : 'apiKey',
           connected: !!fingerprint,
           enabled: byId.get(entry.id) ? !!byId.get(entry.id).enabled : false,
@@ -93,7 +128,7 @@ export function registerApisIpc() {
     }
   })
 
-  ipcMain.handle('apis:get', async (_e, apiId: unknown): Promise<ApiResult<ApiDetailView>> => {
+  handle('apis:get', async (_e, apiId: unknown): Promise<ApiResult<ApiDetailView>> => {
     try {
       const entry = requireEntry(apiId)
       const row = await connectionRow(entry.id)
@@ -109,6 +144,7 @@ export function registerApisIpc() {
         risk: entry.risk,
         tags: entry.tags,
         verifiedAt: entry.verifiedAt,
+        verification: entry.verification,
         authType: entry.auth.type === 'none' ? 'none' : 'apiKey',
         docsUrl: entry.docsUrl,
         baseUrl: entry.baseUrl,
@@ -131,7 +167,7 @@ export function registerApisIpc() {
     }
   })
 
-  ipcMain.handle(
+  handle(
     'apis:connect',
     async (_e, apiId: unknown, secret?: unknown): Promise<ApiResult<ApiConnectionView>> => {
       try {
@@ -156,7 +192,7 @@ export function registerApisIpc() {
     }
   )
 
-  ipcMain.handle('apis:disconnect', async (_e, apiId: unknown): Promise<ApiResult<ApiConnectionView>> => {
+  handle('apis:disconnect', async (_e, apiId: unknown): Promise<ApiResult<ApiConnectionView>> => {
     try {
       const entry = requireEntry(apiId)
       await removeApiSecret(entry.id)
@@ -168,7 +204,7 @@ export function registerApisIpc() {
     }
   })
 
-  ipcMain.handle('apis:test', async (_e, apiId: unknown) => {
+  handle('apis:test', async (_e, apiId: unknown) => {
     try {
       const entry = requireEntry(apiId)
       const result = await testApi(entry.id)
@@ -186,7 +222,7 @@ export function registerApisIpc() {
     }
   })
 
-  ipcMain.handle('apis:audit', async (_e, limit?: unknown) => {
+  handle('apis:audit', async (_e, limit?: unknown) => {
     try {
       const parsed = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100
       return ok(await listApiAudit(Math.min(500, Math.max(1, parsed))))
@@ -195,7 +231,7 @@ export function registerApisIpc() {
     }
   })
 
-  ipcMain.handle('apis:catalog-version', async (): Promise<ApiResult<ApiCatalogMeta>> => {
+  handle('apis:catalog-version', async (): Promise<ApiResult<ApiCatalogMeta>> => {
     return ok({
       version: CATALOG_VERSION,
       verifiedAt: CATALOG_VERIFIED_AT,

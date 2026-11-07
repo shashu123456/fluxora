@@ -157,7 +157,11 @@ function readImportFile(filePath: string): { data: unknown; bytes: number } {
 }
 
 export async function exportAllData(): Promise<ImportExportData> {
-  const [settingsRows, providerRows, workspaceRows, chatRows, messageRows, memoryRows, promptRows, usageRows, notificationRows] = await Promise.all([
+  const [
+    settingsRows, providerRows, workspaceRows, chatRows, messageRows, memoryRows,
+    promptRows, usageRows, notificationRows, terminalRows, brainRows, devEventRows,
+    sessionRows, indexRows,
+  ] = await Promise.all([
     all<any>('SELECT * FROM settings'),
     all<any>('SELECT * FROM providers'),
     all<any>('SELECT * FROM workspaces'),
@@ -167,6 +171,11 @@ export async function exportAllData(): Promise<ImportExportData> {
     all<any>('SELECT * FROM prompts'),
     all<any>('SELECT * FROM usage'),
     all<any>('SELECT * FROM notifications'),
+    all<any>('SELECT * FROM terminal_history ORDER BY created_at ASC'),
+    all<any>('SELECT * FROM project_brain ORDER BY created_at ASC'),
+    all<any>('SELECT * FROM developer_events ORDER BY created_at ASC'),
+    all<any>('SELECT * FROM work_sessions ORDER BY started_at ASC'),
+    all<any>('SELECT * FROM workspace_index'),
   ])
 
   const secretMetadata = await getSecretManager().listProviderMetadata()
@@ -230,6 +239,32 @@ export async function exportAllData(): Promise<ImportExportData> {
       id: r.id, title: r.title, message: r.message, type: r.type,
       timestamp: r.timestamp, read: !!r.read,
     })),
+    terminalHistory: terminalRows.map((r) => ({
+      id: r.id, workspaceId: r.workspace_id, command: r.command, output: r.output,
+      exitCode: r.exit_code, cwd: r.cwd, createdAt: r.created_at, durationMs: r.duration_ms,
+      approvedBy: r.approved_by, commandHash: r.command_hash, status: r.status,
+      approvalId: r.approval_id, outputSize: r.output_size, truncated: r.truncated,
+      cancelled: r.cancelled, finishedAt: r.finished_at,
+    })),
+    projectBrain: brainRows.map((r) => ({
+      id: r.id, workspaceId: r.workspace_id, title: r.title, content: r.content,
+      kind: r.kind, status: r.status, tags: r.tags, pinned: r.pinned, source: r.source,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    })),
+    developerEvents: devEventRows.map((r) => ({
+      id: r.id, kind: r.kind, key: r.key, value: r.value,
+      workspaceId: r.workspace_id, createdAt: r.created_at,
+    })),
+    workSessions: sessionRows.map((r) => ({
+      id: r.id, startedAt: r.started_at, endedAt: r.ended_at, durationMs: r.duration_ms,
+      workspaceId: r.workspace_id, workspaceName: r.workspace_name,
+      chatsCreated: r.chats_created, aiRequests: r.ai_requests,
+      recommendationsAccepted: r.recommendations_accepted, filesChanged: r.files_changed,
+      workspaceSwitches: r.workspace_switches, summary: r.summary, createdAt: r.created_at,
+    })),
+    workspaceIndex: indexRows.map((r) => ({
+      workspaceId: r.workspace_id, data: r.data, indexedAt: r.indexed_at,
+    })),
   }
 }
 
@@ -291,6 +326,36 @@ async function importAllData(data: ImportExportData) {
       await run(
         'INSERT OR REPLACE INTO notifications (id, title, message, type, timestamp, read) VALUES (?, ?, ?, ?, ?, ?)',
         [n.id, n.title, n.message, n.type, n.timestamp, n.read ? 1 : 0]
+      )
+    }
+    for (const t of data.terminalHistory || []) {
+      await run(
+        'INSERT OR REPLACE INTO terminal_history (id, workspace_id, command, output, exit_code, cwd, created_at, duration_ms, approved_by, command_hash, status, approval_id, output_size, truncated, cancelled, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [t.id, t.workspaceId, t.command, t.output, t.exitCode, t.cwd, t.createdAt, t.durationMs, t.approvedBy, t.commandHash, t.status, t.approvalId, t.outputSize, t.truncated, t.cancelled, t.finishedAt]
+      )
+    }
+    for (const b of data.projectBrain || []) {
+      await run(
+        'INSERT OR REPLACE INTO project_brain (id, workspace_id, title, content, kind, status, tags, pinned, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [b.id, b.workspaceId, b.title, b.content, b.kind, b.status, b.tags, b.pinned, b.source, b.createdAt, b.updatedAt]
+      )
+    }
+    for (const e of data.developerEvents || []) {
+      await run(
+        'INSERT OR REPLACE INTO developer_events (id, kind, key, value, workspace_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [e.id, e.kind, e.key, e.value, e.workspaceId, e.createdAt]
+      )
+    }
+    for (const s of data.workSessions || []) {
+      await run(
+        'INSERT OR REPLACE INTO work_sessions (id, started_at, ended_at, duration_ms, workspace_id, workspace_name, chats_created, ai_requests, recommendations_accepted, files_changed, workspace_switches, summary, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [s.id, s.startedAt, s.endedAt, s.durationMs, s.workspaceId, s.workspaceName, s.chatsCreated, s.aiRequests, s.recommendationsAccepted, s.filesChanged, s.workspaceSwitches, s.summary, s.createdAt]
+      )
+    }
+    for (const ix of data.workspaceIndex || []) {
+      await run(
+        'INSERT OR REPLACE INTO workspace_index (workspace_id, data, indexed_at) VALUES (?, ?, ?)',
+        [ix.workspaceId, ix.data, ix.indexedAt]
       )
     }
   })

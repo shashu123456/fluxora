@@ -41,6 +41,25 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
         /* favorites are best-effort */
       }
       set({ providers, favoriteModels, isLoading: false })
+
+      // A provider created without a model list leaves the composer picker empty,
+      // so model selection looks broken. Pull its catalogue once, best-effort.
+      for (const provider of providers) {
+        if (!provider.enabled) continue
+        if ((provider.models?.length ?? 0) > 0) continue
+        if (!(provider.hasKey || provider.apiKey)) continue
+        try {
+          const res = await window.api.providers.refreshModels(provider.id)
+          const models: ModelConfig[] = Array.isArray(res) ? res : res?.models || []
+          if (models.length > 0) {
+            set((state) => ({
+              providers: state.providers.map((p) => (p.id === provider.id ? { ...p, models } : p)),
+            }))
+          }
+        } catch {
+          // a dead endpoint must never block the app
+        }
+      }
     } catch {
       set({ isLoading: false })
     }

@@ -14,6 +14,10 @@ declare global {
 
 const api = () => window.api
 
+// Cleanup for the listeners of the stream currently in flight.
+// Owned by the most recent streamMessage call so stop/unmount can release them.
+let streamCleanup: (() => void) | null = null
+
 function modelDisplayName(raw?: string | null): string | undefined {
   if (!raw) return undefined
   const provider = useProviderStore.getState().providers.find((x) => x.models?.some((m) => m.id === raw))
@@ -53,6 +57,7 @@ export interface ChatStore {
 
   // AI operations
   streamMessage: (content: string, files?: any[]) => Promise<void>
+  cleanup: () => void
   stopStreaming: () => void
   regenerateLastMessage: () => Promise<void>
 
@@ -67,6 +72,10 @@ export interface ChatStore {
 export const useChatStore = create<ChatStore>((set, get) => ({
   chats: [],
   currentChatId: null,
+  cleanup: () => {
+    // Called on unmount and before a new stream starts.
+    streamCleanup?.()
+  },
   messages: [],
   isLoading: false,
   isStreaming: false,
@@ -187,6 +196,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const state = get()
     if (!state.currentChatId) return
 
+    // Never stack two streams: release the previous listeners first.
+    streamCleanup?.()
+
     const settings = useSettingsStore.getState().settings
 
     const requestId =
@@ -259,7 +271,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         chunkUnsub?.()
         doneUnsub?.()
         errorUnsub?.()
+        chunkUnsub = null
+        doneUnsub = null
+        errorUnsub = null
+        if (streamCleanup === cleanup) streamCleanup = null
       }
+      streamCleanup = cleanup
 
       chunkUnsub = api().ai.onChunk((data: any) => {
         if (data.requestId !== requestId) return
@@ -272,42 +289,43 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       doneUnsub = api().ai.onDone(async (data: any) => {
         if (data.requestId !== requestId) return
         cleanup()
-        const { currentChatId, messages: currentMessages } = get()
-        if (currentChatId && data.content) {
-          const msg = await api().chat.addMessage({
-            chatId: currentChatId,
-            role: 'assistant',
-            content: data.content,
-            model: modelDisplayName(data.model) || data.model,
-            usage: {
-              ...(data.usage || {}),
-              cost: data.cost || 0,
-              responseTimeMs: data.responseTimeMs || 0,
-            },
-            status: 'complete',
-          })
-          set((s) => ({
-            messages: [...s.messages, msg],
-            isStreaming: false,
-            streamingContent: '',
-            activeRequestId: null,
-          }))
-
-          if (data.usage && providerId) {
-            await api().usage.record({
-              providerId,
-              model: modelDisplayName(data.model) || modelDisplayName(modelId) || data.model || modelId,
+        try {
+          const { currentChatId } = get()
+          if (currentChatId && data.content) {
+            const msg = await api().chat.addMessage({
               chatId: currentChatId,
-              promptTokens: data.usage.promptTokens,
-              completionTokens: data.usage.completionTokens,
-              totalTokens: data.usage.totalTokens,
-              cost: data.cost || 0,
-              responseTimeMs: data.responseTimeMs || 0,
-              streaming: 1,
-              status: 'success',
+              role: 'assistant',
+              content: data.content,
+              model: modelDisplayName(data.model) || data.model,
+              usage: {
+                ...(data.usage || {}),
+                cost: data.cost || 0,
+                responseTimeMs: data.responseTimeMs || 0,
+              },
+              status: 'complete',
             })
+            set((s) => ({ messages: [...s.messages, msg] }))
+
+            if (data.usage && providerId) {
+              await api().usage.record({
+                providerId,
+                model: modelDisplayName(data.model) || modelDisplayName(modelId) || data.model || modelId,
+                chatId: currentChatId,
+                promptTokens: data.usage.promptTokens,
+                completionTokens: data.usage.completionTokens,
+                totalTokens: data.usage.totalTokens,
+                cost: data.cost || 0,
+                responseTimeMs: data.responseTimeMs || 0,
+                streaming: 1,
+                status: 'success',
+              })
+            }
           }
-        } else {
+        } catch (err: any) {
+          set({ error: err?.message || 'Could not save the assistant response.' })
+        } finally {
+          // Persistence and usage recording are best-effort; the UI must never
+          // stay stuck in a streaming state because one of them failed.
           set({ isStreaming: false, streamingContent: '', activeRequestId: null })
         }
       })
@@ -388,6 +406,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })
       set({ activeRequestId: requestId })
     } catch (err: any) {
+      streamCleanup?.()
       set({ isStreaming: false, streamingContent: '', activeRequestId: null, error: err.message })
     }
   },
@@ -395,6 +414,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   stopStreaming: () => {
     const { activeRequestId } = get()
     if (activeRequestId) api().ai.stop(activeRequestId)
+    // Release the listeners immediately instead of waiting for an event that
+    // will never arrive once the stream has been aborted.
+    streamCleanup?.()
     set({ isStreaming: false, streamingContent: '', activeRequestId: null })
   },
 

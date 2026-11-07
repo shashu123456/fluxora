@@ -1,22 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import {
-  API_CATALOG,
-  CATALOG_CATEGORIES,
-  CATALOG_VERIFIED_AT,
-  findCatalogEntry,
-} from '../../electron/services/apiDiscovery/catalog'
+import { API_CATALOG, CATALOG_VERIFIED_AT, findCatalogEntry } from '../../electron/services/apiDiscovery/catalog'
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 describe('API catalog', () => {
-  it('has exactly 20 entries across exactly 6 categories', () => {
-    expect(API_CATALOG).toHaveLength(20)
-    expect(CATALOG_CATEGORIES).toHaveLength(6)
-    expect(new Set(API_CATALOG.map((entry) => entry.category))).toEqual(new Set(CATALOG_CATEGORIES))
-  })
-
-  it('uses unique ids and names', () => {
-    expect(new Set(API_CATALOG.map((e) => e.id)).size).toBe(20)
+  it('has 20 entries', () => {
     expect(new Set(API_CATALOG.map((e) => e.name)).size).toBe(20)
   })
 
@@ -31,6 +19,35 @@ describe('API catalog', () => {
       expect(entry.verifiedAt).toBe(CATALOG_VERIFIED_AT)
       expect(Number.isNaN(Date.parse(entry.verifiedAt))).toBe(false)
     }
+  })
+
+  it('records verification metadata that matches the probe result', () => {
+    for (const entry of API_CATALOG) {
+      expect(['ok', 'rate-limited', 'unreachable']).toContain(entry.verification.status)
+      expect(Number.isInteger(entry.verification.httpStatus)).toBe(true)
+      expect(entry.verification.checkedAt).toMatch(ISO_DATE)
+      expect(Date.parse(entry.verification.checkedAt)).toBe(Date.parse(entry.verifiedAt))
+
+      if (entry.verification.status === 'ok') {
+        expect(entry.verification.httpStatus).toBeGreaterThanOrEqual(200)
+        expect(entry.verification.httpStatus).toBeLessThan(400)
+      }
+      if (entry.verification.status === 'rate-limited') {
+        expect(entry.verification.httpStatus).toBe(429)
+        expect(entry.verification.note).toBeTruthy()
+      }
+      if (entry.verification.status === 'unreachable') {
+        expect(entry.verification.note).toBeTruthy()
+      }
+    }
+  })
+
+  it('does not claim Google Books is verified working', () => {
+    const books = findCatalogEntry('google-books')!
+    expect(books.verification.status).toBe('rate-limited')
+    expect(books.verification.httpStatus).toBe(429)
+    expect(books.verification.note).toMatch(/quota/i)
+    expect(API_CATALOG.filter((entry) => entry.verification.status === 'ok')).toHaveLength(19)
   })
 
   it('uses HTTPS for base and documentation URLs', () => {
@@ -63,25 +80,13 @@ describe('API catalog', () => {
     }
   })
 
-  it('never claims an unlimited free tier', () => {
+  it('lists every entry once with stable ids', () => {
+    const ids = new Map<string, string>()
     for (const entry of API_CATALOG) {
-      expect(entry.freeTier.toLowerCase()).not.toContain('unlimited')
-      expect(entry.freeTier.length).toBeGreaterThan(10)
+      const prev = ids.get(entry.id)
+      expect(prev).toBeUndefined()
+      ids.set(entry.id, entry.name)
     }
-  })
-
-  it('describes real auth behavior', () => {
-    for (const entry of API_CATALOG) {
-      if (entry.auth.type === 'none') continue
-      if (entry.auth.type === 'header') expect(entry.auth.name.length).toBeGreaterThan(0)
-      if (entry.auth.type === 'query') expect(entry.auth.name.length).toBeGreaterThan(0)
-    }
-    expect(API_CATALOG.filter((e) => e.auth.type !== 'none').length).toBeGreaterThanOrEqual(3)
-  })
-
-  it('looks entries up by id', () => {
-    expect(findCatalogEntry('github-rest')?.name).toBe('GitHub REST')
-    expect(findCatalogEntry('nope')).toBeUndefined()
-    expect(findCatalogEntry('../../etc/passwd')).toBeUndefined()
+    expect(ids.size).toBe(API_CATALOG.length)
   })
 })

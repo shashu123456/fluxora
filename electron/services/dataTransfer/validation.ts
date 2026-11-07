@@ -2,7 +2,7 @@ import type { ImportExportData, ProviderConfig } from '../../../src/types'
 import type { SecretMetadataExport } from '../../../src/types/secrets'
 import { sanitizeSettingsForExport } from '../secrets/serializer'
 
-export const CURRENT_EXPORT_SCHEMA_VERSION = 1
+export const CURRENT_EXPORT_SCHEMA_VERSION = 2
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024
 export const MAX_IMPORT_ITEMS = 200_000
 
@@ -25,6 +25,11 @@ const ARRAY_FIELDS = [
   'workspaces',
   'usage',
   'notifications',
+  'terminalHistory',
+  'projectBrain',
+  'developerEvents',
+  'workSessions',
+  'workspaceIndex',
 ] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -176,6 +181,11 @@ export function validateImportPayload(input: unknown, sourceBytes = 0): ImportVa
       workspaces: (arrays.workspaces || []) as ImportExportData['workspaces'],
       usage: (arrays.usage || []) as ImportExportData['usage'],
       notifications: (arrays.notifications || []) as ImportExportData['notifications'],
+      terminalHistory: arrays.terminalHistory || [],
+      projectBrain: arrays.projectBrain || [],
+      developerEvents: arrays.developerEvents || [],
+      workSessions: arrays.workSessions || [],
+      workspaceIndex: arrays.workspaceIndex || [],
     },
   }
 }

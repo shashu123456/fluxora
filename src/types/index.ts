@@ -369,6 +369,12 @@ export interface ImportExportData {
   workspaces: Workspace[]
   usage: UsageRecord[]
   notifications: NotificationItem[]
+  /** Portability: terminal history, project brain, developer layer, index snapshot. */
+  terminalHistory?: any[]
+  projectBrain?: any[]
+  developerEvents?: any[]
+  workSessions?: any[]
+  workspaceIndex?: any[]
 }
 
 export interface ChatExportData {

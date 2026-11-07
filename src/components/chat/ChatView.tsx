@@ -180,6 +180,12 @@ export function ChatView() {
   }, [streamingContent])
 
   useEffect(() => {
+    return () => {
+      useChatStore.getState().cleanup()
+    }
+  }, [])
+
+  useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px'
@@ -431,6 +437,9 @@ export function ChatView() {
         </div>
       )}
 
+      <div className="sr-only" role="status" aria-live="polite">
+        {isStreaming ? 'Assistant is responding.' : ''}
+      </div>
       <div className="border-t border-border/60 bg-background/60 px-4 pb-3 pt-2">
         <div className="mx-auto max-w-3xl">
           <div className="mb-2 flex items-center gap-2">
@@ -549,11 +558,11 @@ export function ChatView() {
               className="max-h-[200px] flex-1 resize-none bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground"
             />
             {isStreaming ? (
-              <Button variant="secondary" size="icon" className="h-8 w-8 shrink-0" onClick={stopStreaming}>
+              <Button variant="secondary" size="icon" className="h-8 w-8 shrink-0" onClick={stopStreaming} aria-label="Stop generating">
                 <Square className="h-4 w-4" />
               </Button>
             ) : (
-              <Button size="icon" className="h-8 w-8 shrink-0 transition-transform duration-150 hover:scale-105" onClick={handleSend} disabled={!input.trim()}>
+              <Button size="icon" className="h-8 w-8 shrink-0 transition-transform duration-150 hover:scale-105" onClick={handleSend} disabled={!input.trim()} aria-label="Send message">
                 <Send className="h-4 w-4" />
               </Button>
             )}

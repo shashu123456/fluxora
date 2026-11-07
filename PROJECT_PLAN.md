@@ -440,8 +440,8 @@ Do not start platform programs.
 | 2026-11-04 | Agent efficiency guidance + start prompt | Complete; see Sections 13–14 and `docs/AGENT_START_PROMPT.md` |
 | 2026-11-04 | Phase 2 database harness | Complete; production `sqlite3`, 297/297 pass, tsc/build pass |
 | 2026-11-04 | Phase 3 CI | PASS; GitHub Actions run 41855224190 (2m 6s) |
-| 2026-11-04 | Phase 4 Windows packaging | PASS (unsigned); installer 104.9 MiB + portable 104.7 MiB; sqlite3 unpacked and loadable; signing BLOCKED |
-| Next | Phase 5 Clean-machine validation | Pending |
+| 2026-11-07 | Phase 4 Windows packaging | PARTIAL — `Fluxora-Setup-1.0.0.exe` (99.1 MiB) + `Fluxora-Portable-1.0.0.exe` (98.8 MiB) + `win-unpacked/Fluxora.exe`; sqlite3 rebuilt in build script and packaged unpacked; packaging reproducible; CI job added; signing BLOCKED (NotSigned); install/uninstall smoke in clean profile NOT VERIFIED (no clean machine); live keyed test NOT VERIFIED (no token); live-app visual NOT VERIFIED; 434 tests / 29 files; both typechecks green; production build green |
+| Next | Phase 5 Clean-machine validation | Pending (install/uninstall smoke NOT VERIFIED locally) |
 
 ---
 

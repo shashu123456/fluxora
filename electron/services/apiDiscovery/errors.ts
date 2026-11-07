@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | 'http_error'
   | 'network_error'
   | 'catalog_invalid'
+  | 'untrusted_sender'
 
 export class ApiDiscoveryError extends Error {
   readonly code: ApiErrorCode

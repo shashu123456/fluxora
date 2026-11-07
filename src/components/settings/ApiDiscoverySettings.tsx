@@ -26,6 +26,21 @@ const RISK_STYLES: Record<string, string> = {
   high: 'border-red-500/40 text-red-400',
 }
 
+const VERIFICATION_LABELS: Record<string, { label: string; className: string }> = {
+  'rate-limited': { label: 'Quota-limited at check', className: 'border-amber-500/40 text-amber-400' },
+  unreachable: { label: 'Unreachable at check', className: 'border-red-500/40 text-red-400' },
+}
+
+function VerificationBadge({ status }: { status: string }) {
+  const meta = VERIFICATION_LABELS[status]
+  if (!meta) return null
+  return (
+    <span className={cn('rounded border px-1', meta.className)} title="Result of the last manual verification probe">
+      {meta.label}
+    </span>
+  )
+}
+
 function ErrorLine({ message }: { message: string }) {
   return (
     <p role="alert" className="flex items-start gap-2 text-sm text-red-400">
@@ -287,7 +302,12 @@ export function ApiDiscoverySettings() {
                   <span aria-hidden>·</span>
                   <span className={cn('rounded border px-1', RISK_STYLES[item.risk])}>{item.risk} risk</span>
                   <span aria-hidden>·</span>
-                  <span>verified {item.verifiedAt}</span>
+                  <VerificationBadge status={item.verification.status} />
+                  <span>
+                    {item.verification.status === 'ok'
+                      ? `verified ${item.verifiedAt}`
+                      : `checked ${item.verification.checkedAt}`}
+                  </span>
                 </div>
               </button>
             ))}
@@ -327,6 +347,26 @@ export function ApiDiscoverySettings() {
                 <p><span className="text-foreground">Free tier:</span> {detail.freeTier}</p>
                 <p><span className="text-foreground">Response:</span> {detail.responseNotes}</p>
                 <p><span className="text-foreground">Status:</span> {detail.connected ? `Connected (${detail.fingerprint})` : 'Not connected'}</p>
+              </div>
+
+              <div
+                className={cn(
+                  'space-y-1 rounded-md border p-2 text-xs',
+                  detail.verification.status === 'ok'
+                    ? 'border-emerald-500/30 text-muted-foreground'
+                    : detail.verification.status === 'rate-limited'
+                      ? 'border-amber-500/40 text-amber-300'
+                      : 'border-red-500/40 text-red-300'
+                )}
+              >
+                <p className="font-medium">
+                  {detail.verification.status === 'ok'
+                    ? `Verified working: HTTP ${detail.verification.httpStatus} on ${detail.verification.checkedAt}`
+                    : detail.verification.status === 'rate-limited'
+                      ? `Quota response at verification: HTTP ${detail.verification.httpStatus} on ${detail.verification.checkedAt} — this API was NOT confirmed to return data.`
+                      : `Unreachable at verification: HTTP ${detail.verification.httpStatus} on ${detail.verification.checkedAt}.`}
+                </p>
+                {detail.verification.note && <p>{detail.verification.note}</p>}
               </div>
 
               <div className="space-y-1">

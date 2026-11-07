@@ -25,7 +25,7 @@ export interface Recommendation {
   /** Score points that closing this gap would recover. */
   impact: number
   severity: InsightSeverity
-  action?: { kind: 'openTab' | 'runCommand' | 'openFile'; label: string; payload?: Record<string, any> }
+  action?: { kind: 'openTab' | 'runCommand' | 'openFile' | 'openLink'; label: string; payload?: Record<string, any> }
 }
 
 export type EvolutionStage = 'observation' | 'reasoning' | 'insight' | 'recommendation' | 'learning'

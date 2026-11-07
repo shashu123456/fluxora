@@ -12,7 +12,7 @@ Fluxora is an offline-capable Electron desktop app that brings multi-provider AI
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/shashu123456/fluxora/actions/workflows/ci.yml/badge.svg)](https://github.com/shashu123456/fluxora/actions/workflows/ci.yml)
 
-> **Status:** Feature-complete and technically validated for an unsigned release. Full test suite green (415 tests), both typechecks green, production build green, Windows installer + portable built and verified, CI passing on every push. Code signing is the remaining blocker (no certificate; documented, never faked).
+> **Status:** Feature-complete and technically validated for an unsigned release. Full test suite green (434 tests across 29 files), both typechecks green, production build green, Windows installer + portable built and verified: `Fluxora-Setup-1.0.0.exe` (99.1 MiB), `Fluxora-Portable-1.0.0.exe` (98.8 MiB), `win-unpacked/Fluxora.exe` (168.7 MiB); native sqlite3 rebuilt inside the build script and packaged unpacked; packaging reproducible via `npm ci` → `@electron/rebuild` → `electron-builder`; Windows packaging CI job added. CI configured and passing. Code signing is the remaining blocker (no certificate; documented, never faked). All artifacts `NotSigned`. Phase 4 status: PARTIAL — install/uninstall smoke in clean profile NOT VERIFIED (no clean machine), live keyed test NOT VERIFIED (no token), live-app visual smoke NOT VERIFIED (tools cannot reach native window).
 
 ---
 

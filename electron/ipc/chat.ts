@@ -6,6 +6,7 @@ import { getDataDir } from '../config'
 import path from 'path'
 import fs from 'fs'
 import { sendNotification } from './system'
+import { buildChatUpdate, buildMessageUpdate } from './chatMapping'
 
 function mapChat(row: any): Chat {
   return {
@@ -80,20 +81,12 @@ export function registerChatIpc() {
     const now = Date.now()
     const current = await get<any>('SELECT * FROM chats WHERE id = ?', [id])
     if (!current) return null
-    const fields: string[] = []
-    const values: any[] = []
-    const allowed = ['title', 'pinned', 'archived', 'favorite', 'provider_id', 'model_id']
-    for (const key of allowed) {
-      const tsKey = key as keyof typeof data
-      if (data[tsKey] !== undefined) {
-        fields.push(key)
-        values.push(data[tsKey])
-      }
-    }
-    fields.push('updated_at')
-    values.push(now)
-    values.push(id)
-    await run(`UPDATE chats SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`, values)
+    // Accept camelCase (renderer) and legacy snake_case keys. Reading snake_case
+    // keys off a camelCase payload is why providerId/modelId never persisted.
+    const { columns, values } = buildChatUpdate((data || {}) as Record<string, unknown>)
+    columns.push('updated_at')
+    values.push(now, id)
+    await run(`UPDATE chats SET ${columns.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`, values)
     return get<any>('SELECT * FROM chats WHERE id = ?', [id]).then(mapChat)
   })
 
@@ -144,19 +137,10 @@ export function registerChatIpc() {
   })
 
   ipcMain.handle('chat:update-message', async (_e, id: string, data: Partial<Message>) => {
-    const fields: string[] = []
-    const values: any[] = []
-    const allowed = ['content', 'reasoning', 'status', 'usage', 'model', 'provider_id', 'files', 'parent_id', 'branch_id', 'token_count']
-    for (const key of allowed) {
-      const tsKey = key as keyof typeof data
-      if (data[tsKey] !== undefined) {
-        fields.push(key)
-        values.push(data[tsKey])
-      }
-    }
+    const { columns, values } = buildMessageUpdate((data || {}) as Record<string, unknown>)
+    if (columns.length === 0) return null
     values.push(id)
-    if (fields.length === 0) return null
-    await run(`UPDATE messages SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`, values)
+    await run(`UPDATE messages SET ${columns.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`, values)
     return get<any>('SELECT * FROM messages WHERE id = ?', [id]).then(mapMessage)
   })
 
@@ -166,7 +150,16 @@ export function registerChatIpc() {
   })
 
   ipcMain.handle('chat:delete-message', async (_e, id: string) => {
-    await run('DELETE FROM messages WHERE id = ? OR parent_id = ?', [id, id])
+    // Remove the message and every descendant branch, not just direct children.
+    await run(
+      `WITH RECURSIVE branch(id) AS (
+         SELECT id FROM messages WHERE id = ?
+         UNION ALL
+         SELECT m.id FROM messages m JOIN branch b ON m.parent_id = b.id
+       )
+       DELETE FROM messages WHERE id IN (SELECT id FROM branch)`,
+      [id]
+    )
     return true
   })
 

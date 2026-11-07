@@ -16,6 +16,21 @@ export type ApiAuth =
 
 export type ApiRisk = 'low' | 'medium' | 'high'
 
+export type ApiVerificationStatus = 'ok' | 'rate-limited' | 'unreachable'
+
+/**
+ * Result of the last manual probe of this entry's sample request.
+ * `ok` means the endpoint answered with a JSON 2xx from this machine.
+ * `rate-limited` means the endpoint answered with a quota response; it is
+ * reachable but was not confirmed to return data.
+ */
+export interface ApiVerification {
+  status: ApiVerificationStatus
+  httpStatus: number
+  checkedAt: string
+  note?: string
+}
+
 export type ApiCategory =
   | 'Developer Tools'
   | 'Data & Reference'
@@ -36,6 +51,7 @@ export interface ApiCatalogEntry {
   risk: ApiRisk
   tags: string[]
   verifiedAt: string
+  verification: ApiVerification
   sample: {
     method: 'GET'
     path: string
@@ -46,6 +62,19 @@ export interface ApiCatalogEntry {
 
 export const CATALOG_VERSION = '1.0.0'
 export const CATALOG_VERIFIED_AT = '2026-11-06'
+
+const VERIFIED_OK: ApiVerification = {
+  status: 'ok',
+  httpStatus: 200,
+  checkedAt: CATALOG_VERIFIED_AT,
+}
+
+const GOOGLE_BOOKS_VERIFICATION: ApiVerification = {
+  status: 'rate-limited',
+  httpStatus: 429,
+  checkedAt: CATALOG_VERIFIED_AT,
+  note: 'HTTP 429 from a shared IP at verification: the quota was exhausted, so the endpoint is reachable but was not confirmed to return data.',
+}
 
 export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
   {
@@ -60,6 +89,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['git', 'repositories', 'issues', 'open source'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/repos/octocat/Hello-World' },
     responseNotes: 'Repository object with stars, language, license, and timestamps.',
   },
@@ -75,6 +105,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['npm', 'packages', 'javascript', 'versions'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/react' },
     responseNotes: 'Very large document: dist-tags, every version, maintainers, and readme.',
   },
@@ -90,6 +121,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['python', 'packages', 'pypi', 'releases'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/pypi/requests/json' },
     responseNotes: 'Package info plus a releases map with upload times and file URLs.',
   },
@@ -105,6 +137,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['articles', 'blog', 'community', 'writing'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/api/articles', query: { per_page: '1' } },
     responseNotes: 'Array of article summaries with author, tags, and reaction counts.',
   },
@@ -120,6 +153,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['mock', 'testing', 'prototype', 'rest'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/posts/1' },
     responseNotes: 'A single post object: userId, id, title, body.',
   },
@@ -135,6 +169,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['questions', 'stackoverflow', 'answers', 'tags'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: {
       method: 'GET',
       path: '/2.3/questions',
@@ -154,6 +189,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['countries', 'economics', 'indicators', 'reference'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/v2/country/IND', query: { format: 'json' } },
     responseNotes: 'Two-element array: paging metadata, then an array of country records.',
   },
@@ -169,6 +205,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['books', 'authors', 'library', 'search'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/search.json', query: { q: 'the hobbit', limit: '1' } },
     responseNotes: 'Search document with `numFound` and a `docs` array of editions.',
   },
@@ -184,6 +221,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['encyclopedia', 'summary', 'reference', 'articles'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/api/rest_v1/page/summary/Electron_(software)' },
     responseNotes: 'Summary text, thumbnail, and content URLs for one page.',
   },
@@ -199,6 +237,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['images', 'animals', 'random', 'demo'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/api/breeds/image/random' },
     responseNotes: 'One object with a `message` image URL and `status: success`.',
   },
@@ -214,6 +253,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'medium',
     tags: ['images', 'animals', 'breeds'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/v1/images/search', query: { limit: '1' } },
     responseNotes: 'Array of image objects with URL, width, height, and optional breed data.',
   },
@@ -229,6 +269,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['weather', 'forecast', 'temperature', 'geo'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: {
       method: 'GET',
       path: '/v1/forecast',
@@ -248,6 +289,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['geocoding', 'places', 'coordinates', 'search'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/v1/search', query: { name: 'Bengaluru', count: '1' } },
     responseNotes: 'Results array with latitude, longitude, country, and timezone.',
   },
@@ -263,6 +305,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['earthquakes', 'geoscience', 'seismic', 'geojson'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: {
       method: 'GET',
       path: '/fdsnws/event/1/query',
@@ -282,6 +325,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['currency', 'exchange rates', 'forex', 'ecb'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/v1/latest', query: { from: 'USD', to: 'INR' } },
     responseNotes: 'Base currency, date, and a rates object with one entry per target.',
   },
@@ -297,6 +341,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'medium',
     tags: ['crypto', 'prices', 'market cap', 'coins'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: {
       method: 'GET',
       path: '/api/v3/simple/price',
@@ -316,6 +361,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['models', 'datasets', 'ml', 'hub'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/api/models', query: { limit: '1' } },
     responseNotes: 'Array of model records with id, downloads, likes, and tags.',
   },
@@ -331,6 +377,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['llm', 'models', 'pricing', 'context'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/api/v1/models' },
     responseNotes: 'Model list with ids, context length, and per-token pricing.',
   },
@@ -346,6 +393,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['news', 'stories', 'reading', 'tech'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: VERIFIED_OK,
     sample: { method: 'GET', path: '/v0/topstories.json' },
     responseNotes: 'Array of numeric item ids; each id needs a second request for details.',
   },
@@ -361,6 +409,7 @@ export const API_CATALOG: ReadonlyArray<ApiCatalogEntry> = [
     risk: 'low',
     tags: ['books', 'search', 'reading', 'volumes'],
     verifiedAt: CATALOG_VERIFIED_AT,
+    verification: GOOGLE_BOOKS_VERIFICATION,
     sample: { method: 'GET', path: '/books/v1/volumes', query: { q: 'electron', maxResults: '1' } },
     responseNotes: '`totalItems` plus an `items` array with volume info and links.',
   },

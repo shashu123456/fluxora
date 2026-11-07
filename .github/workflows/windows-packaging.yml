@@ -1,0 +1,103 @@
+name: Windows Packaging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'electron-builder.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/windows-packaging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-packaging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build Windows installer and portable
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck Electron
+        run: npm run typecheck:electron
+
+      - name: Typecheck renderer
+        run: npx tsc -p tsconfig.json --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Build renderer and Electron
+        run: npm run build
+
+      - name: Rebuild native sqlite3 for Electron
+        run: npx @electron/rebuild -v 28.2.0 --module-dir . sqlite3
+
+      - name: Verify sqlite3 binding
+        run: node -e "const sqlite3 = require('sqlite3'); console.log('sqlite3', sqlite3.version, 'loaded');"
+
+      - name: Build Windows installer and portable
+        run: npm run electron:build
+
+      - name: Inspect release artifacts
+        run: |
+          $releaseDir = 'release'
+          $exeFiles = Get-ChildItem -Path $releaseDir -Filter '*.exe' -Recurse -File
+          $nsis7z = Get-ChildItem -Path $releaseDir -Filter '*.nsis.7z' -File
+          Write-Host "=== .exe artifacts ==="
+          $exeFiles | ForEach-Object { Write-Host "$($_.FullName) ($($_.Length) bytes)" }
+          Write-Host "=== NSIS archive ==="
+          $nsis7z | ForEach-Object { Write-Host "$($_.FullName) ($($_.Length) bytes)" }
+          if ($exeFiles.Count -eq 0) {
+            Write-Host "::error::No .exe artifacts found in release/"
+            exit 1
+          }
+
+      - name: Upload installer artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxora-installer
+          path: release/ai-workspace-1.0.0-x64.nsis.7z
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload portable artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxora-portable
+          path: release/win-unpacked/Fluxora.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaging-logs
+          path: |
+            release/builder-debug.yml
+            npm-debug.log*
+            electron-builder*.log*
+          if-no-files-found: warn
+          retention-days: 7

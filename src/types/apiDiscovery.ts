@@ -2,6 +2,15 @@ export type ApiAuthType = 'none' | 'apiKey'
 
 export type ApiRiskLevel = 'low' | 'medium' | 'high'
 
+export type ApiVerificationStatus = 'ok' | 'rate-limited' | 'unreachable'
+
+export interface ApiVerificationView {
+  status: ApiVerificationStatus
+  httpStatus: number
+  checkedAt: string
+  note?: string
+}
+
 export type ApiErrorCode =
   | 'unknown_api'
   | 'auth_required'
@@ -16,6 +25,7 @@ export type ApiErrorCode =
   | 'http_error'
   | 'network_error'
   | 'catalog_invalid'
+  | 'untrusted_sender'
 
 export interface ApiCatalogView {
   id: string
@@ -26,6 +36,7 @@ export interface ApiCatalogView {
   risk: ApiRiskLevel
   tags: string[]
   verifiedAt: string
+  verification: ApiVerificationView
   authType: ApiAuthType
   connected: boolean
   enabled: boolean

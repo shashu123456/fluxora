@@ -6,7 +6,9 @@
   },
   "files": [
     "dist/**/*",
-    "dist-electron/**/*"
+    "dist-electron/**/*",
+    "!dist-electron/*debug*",
+    "!dist-electron/*.map"
   ],
   "asarUnpack": [
     "node_modules/sqlite3/**"

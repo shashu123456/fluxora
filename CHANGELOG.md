@@ -24,6 +24,22 @@
   - Settings card with loading, empty, missing-key, blocked, timeout, HTTP-error, and
     network-error states.
 
+### Added
+
+- **Windows packaging (Phase 4)** — unsigned installer and portable built via `npm run electron:build`;
+  NSIS installer `release/ai-workspace-1.0.0-x64.nsis.7z` (104.9 MiB) and portable
+  `release/win-unpacked/` (104.7 MiB). Native `sqlite3` unpacked and proven loadable at
+  `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node`. Version/product
+  metadata verified (ProductName `Fluxora`, version `1.0.0`, icon `build/icon.ico`). Artifact
+  sizes recorded. Signing explicitly documented as BLOCKED (no code signing certificate exists);
+  all artifacts `NotSigned`.
+
+- Windows packaging artifacts corrected (Phase 4)** — installer and portable are now real `.exe`
+  files: `Fluxora-Setup-1.0.0.exe` (99.1 MiB) and `Fluxora-Portable-1.0.0.exe` (98.8 MiB);
+  `win-unpacked/Fluxora.exe` also present. Previous build produced an intermediate NSIS 7z archive;
+  root cause (missing `@electron/rebuild` in build script + node-gyp failure without Visual Studio)
+  fixed.
+
 ### Changed
 
 - `getAllTables()` now reports `api_connections` and `api_audit_log` so data export

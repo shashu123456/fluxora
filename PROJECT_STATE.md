@@ -107,17 +107,18 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - [✓] Master release plan and agent handoff created in `PROJECT_PLAN.md`.
 - [✓] Release Gate V1 Phase 2 — production `sqlite3` test harness; full suite 297/297.
 - [✓] Release Gate V1 Phase 3 — CI workflow authored; GitHub Actions run `41855224190` passed.
-- [✓] Release Gate V1 Phase 4 — Windows installer + portable built; native sqlite3 unpacked and proven loadable in the packaged app; metadata/icon verified; signing documented as BLOCKED.
+- [✓] Release Gate V1 Phase 4 — Windows installer + portable built; native sqlite3 unpacked and proven loadable in the packaged app; metadata/icon verified; signing documented as BLOCKED; artifacts: `Fluxora-Setup-1.0.0.exe` (99.1 MiB) + `Fluxora-Portable-1.0.0.exe` (98.8 MiB); native sqlite3 packaging reproducible via `@electron/rebuild` in the build script; clean `npm ci` + rebuild + build verified; Windows packaging CI job added.
 - [✓] API Discovery MVP (Phase 0 + Phase 1) — curated 20-API catalog, approval-gated executor, SSRF guards, vault-backed keys, audit log, Settings card, 91 tests.
+- [✓] Release Gate V1 Phase 4 documentation update — tests 434/29; Phase 4 status PARTIAL; installer/portable .exe artifacts verified; signing BLOCKED; CI job added.
 
 ## Next Todo
 
-- [✓] Phase 5 — clean-machine validation procedure and local smoke test.
-- [✓] Phase 6 — crash-recovery audit.
-- [✓] Phase 7 — measured performance report.
-- [✓] Phase 8 — security re-audit.
-- [✓] Phase 9 — documentation truth pass.
-- [✓] Phase 10 — final release report.
+- [ ] Phase 5 — clean-machine validation procedure and local smoke test. Install/uninstall smoke in a clean Windows profile/VM NOT VERIFIED (no clean machine available locally; documented procedure in `docs/RELEASE_GATE_EVIDENCE.md`).
+- [ ] Phase 6 — crash-recovery audit.
+- [ ] Phase 7 — measured performance report.
+- [ ] Phase 8 — security re-audit.
+- [ ] Phase 9 — documentation truth pass.
+- [ ] Phase 10 — final release report.
 - [ ] Post-release: H1/H2 indexing, H3/H4 chat lifecycle, H5/H7/H8 exports/caps, H9/H10 docs and IPC validation.
 
 ## Known Issues
@@ -149,6 +150,7 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - Tests (full suite): PASS — 415 tests across 26 files, including production-database coverage (the 91 API Discovery tests were added in this pass)
 - CI: PASS — GitHub Actions run `41855922082` (Windows, Node 20; 1m 13s)
 - Windows packaging: PASS (unsigned) — `Fluxora-Setup-1.0.0.exe` 104.9 MiB and `Fluxora-Portable-1.0.0.exe` 104.7 MiB; ProductName `Fluxora`, version `1.0.0`, icon matches `build/icon.ico`
+- Artifact verification: NSIS installer and portable executable exist; version/product metadata correct; sqlite3 native binary present in unpacked `node_modules/sqlite3/build/Release/`; no stale debug files packaged; artifact sizes recorded (104.9 MiB installer, 104.7 MiB portable); signing status explicit: `NotSigned`.
 - Native sqlite3 in package: PASS — `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node` (1,892,864 bytes); packaged app created a 15-table database on first launch
 - Packaged app launch: PASS — unpacked and portable binaries both start with a fresh `--user-data-dir`; real user data untouched
 - Code signing: BLOCKED — no certificate; all artifacts `NotSigned`

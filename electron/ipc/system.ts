@@ -333,6 +333,9 @@ export function registerSystemIpc() {
     const { providerId, modelId, messages, temperature, maxTokens, chatId, workspaceId } = payload
     const controller = new AbortController()
     activeStreams.set(requestId, controller)
+    // A closed window must not leave the upstream request running.
+    const abortOnWindowClose = () => controller.abort()
+    sender.once('destroyed', abortOnWindowClose)
     persistNotification({ title: 'Stream Started', message: `Streaming to ${modelId}`, type: 'info' })
 
     const startedAt = Date.now()
@@ -355,6 +358,7 @@ export function registerSystemIpc() {
         },
         onDone: async (result) => {
           activeStreams.delete(requestId)
+          sender.off('destroyed', abortOnWindowClose)
           const elapsed = Date.now() - startedAt
           const usage = result.usage
           const cost = estimateCost(model, usage)
@@ -385,6 +389,7 @@ export function registerSystemIpc() {
         },
         onError: (err) => {
           activeStreams.delete(requestId)
+          sender.off('destroyed', abortOnWindowClose)
           recordUsage({
             providerId, model: model.id, chatId, workspaceId,
             promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0,
@@ -399,6 +404,7 @@ export function registerSystemIpc() {
       })
     } catch (err: any) {
       activeStreams.delete(requestId)
+      sender.off('destroyed', abortOnWindowClose)
       if (!sender.isDestroyed()) {
         sender.send('ai:error', { requestId, error: err.message })
       }

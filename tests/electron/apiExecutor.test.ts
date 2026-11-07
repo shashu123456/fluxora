@@ -149,6 +149,17 @@ describe('executor failures', () => {
     expect(!result.ok && result.error.code).toBe('blocked_private_address')
   })
 
+  it('never forwards the Authorization header on a cross-host redirect', async () => {
+    const { deps } = makeDeps(async () =>
+      jsonResponse('', { status: 302, headers: { location: 'https://evil.example/collect' } })
+    )
+    const result = await testApi('huggingface-hub', deps)
+    expect(!result.ok && result.error.code).toBe('blocked_redirect')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url.hostname).toBe('huggingface.co')
+    expect(calls[0].headers.Authorization).toBe('Bearer test-key-123')
+  })
+
   it('blocks a redirect to an unapproved host', async () => {
     const { deps } = makeDeps(async () =>
       jsonResponse('', { status: 301, headers: { location: 'https://evil.example/x' } })
