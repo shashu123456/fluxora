@@ -57,28 +57,38 @@ jobs:
 
       - name: Build Windows installer and portable
         run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-      - name: Inspect release artifacts
+      - name: Assert release artifacts exist
         run: |
           $releaseDir = 'release'
-          $exeFiles = Get-ChildItem -Path $releaseDir -Filter '*.exe' -Recurse -File
-          $nsis7z = Get-ChildItem -Path $releaseDir -Filter '*.nsis.7z' -File
-          Write-Host "=== .exe artifacts ==="
-          $exeFiles | ForEach-Object { Write-Host "$($_.FullName) ($($_.Length) bytes)" }
-          Write-Host "=== NSIS archive ==="
-          $nsis7z | ForEach-Object { Write-Host "$($_.FullName) ($($_.Length) bytes)" }
-          if ($exeFiles.Count -eq 0) {
-            Write-Host "::error::No .exe artifacts found in release/"
+          $setupExe = Get-ChildItem -Path $releaseDir -Filter 'Fluxora-Setup-*.exe' -File | Select-Object -First 1
+          $portableExe = Get-ChildItem -Path $releaseDir -Filter 'Fluxora-Portable-*.exe' -File | Select-Object -First 1
+          Write-Host "=== Installer ==="
+          if ($setupExe) {
+            Write-Host "$($setupExe.FullName) ($($setupExe.Length) bytes)"
+          } else {
+            Write-Host "::error::Fluxora-Setup-*.exe not found in release/"
             exit 1
           }
+          Write-Host "=== Portable ==="
+          if ($portableExe) {
+            Write-Host "$($portableExe.FullName) ($($portableExe.Length) bytes)"
+          } else {
+            Write-Host "::error::Fluxora-Portable-*.exe not found in release/"
+            exit 1
+          }
+          Write-Host "=== All .exe artifacts ==="
+          Get-ChildItem -Path $releaseDir -Filter '*.exe' -Recurse -File | ForEach-Object { Write-Host "$($_.FullName) ($($_.Length) bytes)" }
 
       - name: Upload installer artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fluxora-installer
-          path: release/ai-workspace-1.0.0-x64.nsis.7z
-          if-no-files-found: warn
+          path: release/Fluxora-Setup-*.exe
+          if-no-files-found: error
           retention-days: 30
 
       - name: Upload portable artifact
@@ -86,8 +96,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fluxora-portable
-          path: release/win-unpacked/Fluxora.exe
-          if-no-files-found: warn
+          path: release/Fluxora-Portable-*.exe
+          if-no-files-found: error
           retention-days: 30
 
       - name: Upload build logs
