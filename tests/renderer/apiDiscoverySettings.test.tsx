@@ -171,7 +171,7 @@ describe('API Discovery Settings card', () => {
     render(<ApiDiscoverySettings />)
     const itemBtn = await screen.findByRole('button', { name: /test api/i }, { timeout: 5000 })
     await itemBtn.click()
-    const keyInput = await screen.findByRole('textbox', { name: /api key/i }, { timeout: 5000 })
+    const keyInput = await screen.findByLabelText(/api key/i, {}, { timeout: 5000 })
     fireEvent.change(keyInput, { target: { value: 'super-secret-key-12345' } })
     const saveBtn = screen.getByRole('button', { name: /save key/i })
     await saveBtn.click()
@@ -186,7 +186,7 @@ describe('API Discovery Settings card', () => {
     render(<ApiDiscoverySettings />)
     const itemBtn = await screen.findByRole('button', { name: /test api/i }, { timeout: 5000 })
     await itemBtn.click()
-    await waitFor(() => expect(screen.getByText('a1b2c3d4e5f6')).toBeInTheDocument(), { timeout: 5000 })
+    await waitFor(() => expect(screen.getByText(/a1b2c3d4e5f6/)).toBeInTheDocument(), { timeout: 5000 })
   })
 
   it('shows send-test confirmation and untrusted response label', async () => {

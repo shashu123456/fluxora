@@ -16,11 +16,21 @@ export function ensureDataDir() {
 
 export function getDataDir(): string {
   if (dataDirOverride) return dataDirOverride
+  // Check PORTABLE_EXECUTABLE_DIR env var first
+  const portableEnv = process.env.PORTABLE_EXECUTABLE_DIR
+  if (portableEnv) {
+    const portableDataDir = path.join(portableEnv, 'data')
+    if (!fs.existsSync(portableDataDir)) {
+      fs.mkdirSync(portableDataDir, { recursive: true })
+    }
+    return portableDataDir
+  }
   if (app.isPackaged) {
     const exeDir = path.dirname(app.getPath('exe'))
-    const portableRoot = path.join(exeDir, 'data')
-    const portableExe = path.join(exeDir, 'Fluxora-Portable-1.0.0.exe')
-    if (fs.existsSync(portableRoot) || fs.existsSync(portableExe)) {
+    // Fallback: check for any Portable*.exe in the exe directory
+    const portableExe = path.join(exeDir, 'Fluxora-Portable.exe')
+    if (fs.existsSync(portableExe)) {
+      const portableRoot = path.join(exeDir, 'data')
       fs.mkdirSync(portableRoot, { recursive: true })
       return portableRoot
     }

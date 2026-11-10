@@ -12,8 +12,6 @@ beforeEach(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxora-api-db-'))
   dbPath = path.join(tempDir, 'test.db')
   await initDatabase(dbPath)
-  // Ensure clean state for prune test
-  await new Promise(r => setTimeout(r, 10))
 })
 
 afterEach(async () => {
