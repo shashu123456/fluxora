@@ -250,7 +250,7 @@ export function Sidebar() {
 
       <div className="mt-3 flex items-center justify-between px-3 pb-1">
         <span className="fx-label">Chats</span>
-        <span className="text-[10px] tabular-nums text-muted-foreground/50">{filteredChats.length}</span>
+        <span className="text-[10px] tabular-nums text-foreground/60">{filteredChats.length}</span>
       </div>
 
       <div className="fx-scroll flex-1 px-2 pb-2">
@@ -298,7 +298,7 @@ export function Sidebar() {
         ))}
         {filteredChats.length === 0 && (
           <div className="fx-empty px-2 py-8">
-            <MessageSquare className="h-4 w-4 text-muted-foreground/50" />
+            <MessageSquare className="h-4 w-4" />
             <p className="text-[12px] text-muted-foreground/70">{query ? 'No conversations found' : 'No conversations yet'}</p>
           </div>
         )}
@@ -365,7 +365,7 @@ const ChatRow = memo(function ChatRow({
           )}
         >
           <span className="min-w-0 flex-1 truncate">{chat.title || 'New chat'}</span>
-          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50">
+          <span className="shrink-0 text-[10px] tabular-nums text-foreground/60">
             {formatRelativeTime(chat.updatedAt)}
           </span>
         </button>

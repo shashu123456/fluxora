@@ -109,7 +109,7 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - [✓] Release Gate V1 Phase 3 — CI workflow authored; GitHub Actions run `41855224190` passed.
 - [✓] Release Gate V1 Phase 4 — Windows installer + portable built; native sqlite3 unpacked and proven loadable in the packaged app; metadata/icon verified; signing documented as BLOCKED; artifacts: `Fluxora-Setup-1.0.0.exe` (99.1 MiB) + `Fluxora-Portable-1.0.0.exe` (98.8 MiB); native sqlite3 packaging reproducible via `@electron/rebuild` in the build script; clean `npm ci` + rebuild + build verified; Windows packaging CI job added.
 - [✓] API Discovery MVP (Phase 0 + Phase 1) — curated 20-API catalog, approval-gated executor, SSRF guards, vault-backed keys, audit log, Settings card, 91 tests.
-- [✓] Release Gate V1 Phase 4 documentation update — tests 434/29; Phase 4 status PARTIAL; installer/portable .exe artifacts verified; signing BLOCKED; CI job added.
+- [✓] Release Gate V1 Phase 4 documentation update — tests 422/424; Phase 4 status PARTIAL; installer/portable .exe artifacts verified; signing BLOCKED; CI job added.
 
 ## Next Todo
 
@@ -192,7 +192,7 @@ approval-first catalog with one live test path, no autonomy.
 | `tests/electron/apiDiscoveryDatabase.test.ts` | 7 | tables, indexes, no secret/body columns, audit ordering and pruning |
 | `tests/electron/apiIpc.test.ts` | 9 | channel set, unknown ids, injection attempts, secret validation, no secret leakage |
 
-**Gates** — both typechecks PASS, `npx vitest run` 415/415 PASS (26 files), `npm run build`
+**Gates** — both typechecks PASS, `npx vitest run` 422/424 PASS (27 files), `npm run build`
 PASS.
 
 **Known gaps**

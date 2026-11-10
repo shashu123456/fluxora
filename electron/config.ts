@@ -17,8 +17,10 @@ export function ensureDataDir() {
 export function getDataDir(): string {
   if (dataDirOverride) return dataDirOverride
   if (app.isPackaged) {
-    const portableRoot = path.join(path.dirname(app.getPath('exe')), 'data')
-    if (fs.existsSync(portableRoot) || fs.existsSync(path.join(path.dirname(app.getPath('exe')), 'AI Workspace.exe'))) {
+    const exeDir = path.dirname(app.getPath('exe'))
+    const portableRoot = path.join(exeDir, 'data')
+    const portableExe = path.join(exeDir, 'Fluxora-Portable-1.0.0.exe')
+    if (fs.existsSync(portableRoot) || fs.existsSync(portableExe)) {
       fs.mkdirSync(portableRoot, { recursive: true })
       return portableRoot
     }

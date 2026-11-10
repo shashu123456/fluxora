@@ -242,8 +242,8 @@ export function ProfileView() {
           <SectionHeading icon={Sparkles} title="Learned insights" caption="What Fluxora noticed" />
           {insights.length === 0 ? (
             <div className="fx-empty py-10">
-              <Sparkles className="h-5 w-5 text-muted-foreground/60" />
-              <p className="mt-2 text-sm text-muted-foreground">Insights appear after a little real usage.</p>
+              <Sparkles className="h-5 w-5 text-fx-gold/60" />
+              <p className="mt-2 text-sm text-foreground">Insights appear after a little real usage.</p>
             </div>
           ) : (
             <div className="fx-panel divide-y divide-border/40 overflow-hidden">
@@ -271,7 +271,7 @@ export function ProfileView() {
           <SectionHeading icon={Clock} title="Recent sessions" caption="Work automatically tracked" />
           {sessions.length === 0 ? (
             <div className="fx-empty py-10">
-              <Clock className="h-5 w-5 text-muted-foreground/60" />
+              <Clock className="h-5 w-5 text-fx-gold/60" />
               <p className="mt-2 text-sm text-muted-foreground">Your first session summary appears when you step away.</p>
             </div>
           ) : (
@@ -324,7 +324,7 @@ export function ProfileView() {
                 <div key={memory.id} className="group flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
                     <p className="text-[13px] leading-relaxed text-foreground/90">{memory.content}</p>
-                    <p className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/50">
+                    <p className="mt-0.5 text-[10px] uppercase tracking-wider text-fx-gold/60">
                       {memory.type} · {formatRelativeTime(memory.createdAt)}
                     </p>
                   </div>
@@ -347,7 +347,7 @@ export function ProfileView() {
           <SectionHeading icon={BookOpen} title="Your data" caption="Local-first" />
           <div className="fx-panel-quiet flex flex-wrap items-start justify-between gap-4 p-4">
             <div className="flex min-w-0 gap-3">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-fx-gold/70" />
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
                 <p className="text-[13px] text-foreground">Nothing leaves this machine.</p>
                 <p className="mt-0.5 max-w-md text-[12px] leading-relaxed text-muted-foreground">

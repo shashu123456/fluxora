@@ -225,7 +225,9 @@ export function DashboardView() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   {workspaces.length === 0 ? (
-                    <DropdownMenuItem disabled>No workspaces yet</DropdownMenuItem>
+                    <DropdownMenuItem disabled>
+                      No workspaces yet
+                    </DropdownMenuItem>
                   ) : (
                     workspaces.map((ws) => (
                       <DropdownMenuItem
@@ -461,7 +463,7 @@ export function DashboardView() {
               <section>
                 <SectionLabel>Continue</SectionLabel>
                 {recentChats.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No conversations in this workspace yet.</p>
+                  <p className="text-sm text-muted-foreground">Start a new chat to begin organizing your work.</p>
                 ) : (
                   <div className="divide-y divide-border/50 border-t border-border/50">
                     {recentChats.map((chat) => (

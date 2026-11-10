@@ -706,6 +706,20 @@ mark {
   text-align: center;
 }
 
+.fx-empty > *:first-child {
+  color: hsl(var(--fx-gold) / 0.6);
+  font-size: 0.875rem;
+}
+
+.fx-empty svg,
+.fx-empty [class*="lucide-"] {
+  color: hsl(var(--fx-gold) / 0.7);
+}
+
+.fx-empty .lucide-icon {
+  stroke: hsl(var(--fx-gold) / 0.7);
+}
+
 .fx-kbd {
   display: inline-flex;
   align-items: center;

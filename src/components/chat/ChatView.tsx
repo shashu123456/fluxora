@@ -461,7 +461,7 @@ export function ChatView() {
                     }}
                   />
                   <span className="max-w-[110px] truncate font-medium">{effectiveProviderName}</span>
-                  <span className="text-muted-foreground/50">·</span>
+                  <span className="text-fx-gold/60">·</span>
                   <span className="max-w-[150px] truncate text-muted-foreground">{effectiveModelName}</span>
                   <ChevronsUpDown className="h-3 w-3 shrink-0 text-muted-foreground/70" />
                 </Button>

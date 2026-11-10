@@ -75,7 +75,7 @@ function MetricRows({ items }: { items: { label: string; metric: ScoredMetric }[
           <summary className="flex cursor-pointer list-none items-center gap-3">
             <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
             <span className={cn('font-display text-sm tabular-nums', scoreTone(metric.score))}>{metric.score}</span>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform group-open:rotate-90" />
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fx-gold/50 transition-transform group-open:rotate-90" />
           </summary>
           <ul className="mt-2 space-y-1 pl-1">
             {metric.reasons.map((reason, index) => (

@@ -427,7 +427,7 @@ export function GitSection({ cwd }: GitSectionProps) {
 
       {!gitStatus && !isLoading && (
         <div className="flex flex-1 flex-col items-center justify-center text-center">
-          <GitBranch className="mb-2 h-8 w-8 text-muted-foreground/50" />
+          <GitBranch className="mb-2 h-8 w-8 text-fx-gold/50" />
           <p className="text-sm text-muted-foreground">Not a git repository</p>
           <p className="text-xs text-muted-foreground/70">Navigate to a git-enabled folder to use git features</p>
         </div>
