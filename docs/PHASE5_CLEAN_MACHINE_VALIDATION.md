@@ -16,7 +16,7 @@ The following steps have been verified in the current environment (Windows, OneD
 | **Launch packaged app** | VERIFIED | `win-unpacked/Fluxora.exe` launched on fresh `--user-data-dir`; database created with expected tables (api_connections, api_audit_log, etc.); process exits cleanly |
 | **Launch portable executable** | VERIFIED | `release/Fluxora-Portable-1.0.0.exe` launched; database created at `%APPDATA%/ai-workspace/data/aiworkspace.db` (241,664 bytes, valid SQLite with api_connections and api_audit_log tables); process exits cleanly on timeout |
 | **Full test suite** | VERIFIED (423/423, 0 transient timeouts) | `npx vitest run`: 26 files, 423 tests passed. Both typechecks pass. Production build green. |
-| **CI workflow** | VERIFIED | `.github/workflows/ci.yml` and `.github/workflows/windows-packaging.yml` both have green runs on current HEAD (runs 42811770188, 42811770299). |
+| **CI workflow** | VERIFIED | `.github/workflows/ci.yml` and `.github/workflows/windows-packaging.yml` CI 42811770188 and Windows Packaging 42811770299 both succeeded on code commit 5df8d4b; docs commit 8d5ebec only triggered CI (42816446366). |
 | **Native sqlite3 packaging** | VERIFIED | `@electron/rebuild -v 28.2.0 --module-dir . -f sqlite3` rebuilds `node_sqlite3.node` (1,892,864 bytes); packaged at `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node`; app launches and creates database successfully. |
 | **TypeScript checks** | VERIFIED | `npx tsc -p electron/tsconfig.json --noEmit` and `npx tsc -p tsconfig.json --noEmit` both pass. |
 

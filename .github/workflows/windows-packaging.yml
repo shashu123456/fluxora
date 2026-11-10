@@ -9,6 +9,10 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/windows-packaging.yml'
+      - 'src/**'
+      - 'tests/**'
+      - 'vitest.config.ts'
+      - 'tsconfig.json'
   workflow_dispatch:
 
 permissions:
