@@ -109,7 +109,7 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - [✓] Release Gate V1 Phase 3 — CI workflow authored; GitHub Actions run `41855224190` passed.
 - [✓] Release Gate V1 Phase 4 — Windows installer + portable built; native sqlite3 unpacked and proven loadable in the packaged app; metadata/icon verified; signing documented as BLOCKED; artifacts: `Fluxora-Setup-1.0.0.exe` (99.1 MiB) + `Fluxora-Portable-1.0.0.exe` (98.8 MiB); native sqlite3 packaging reproducible via `@electron/rebuild` in the build script; clean `npm ci` + rebuild + build verified; Windows packaging CI job added.
 - [✓] API Discovery MVP (Phase 0 + Phase 1) — curated 20-API catalog, approval-gated executor, SSRF guards, vault-backed keys, audit log, Settings card, 91 tests.
-- [✓] Release Gate V1 Phase 4 documentation update — tests 422/424; Phase 4 status PARTIAL; installer/portable .exe artifacts verified; signing BLOCKED; CI job added.
+- [✓] Release Gate V1 Phase 4 documentation update — tests 423/423; Phase 4 status PARTIAL; installer/portable .exe artifacts verified; signing BLOCKED; CI job added.
 
 ## Next Todo
 
@@ -147,7 +147,7 @@ Fluxora is still **not release-ready**. The database harness is green, the full 
 - Renderer build: PASS — Vite production build after clearing `node_modules/.vite` (1912 modules transformed; renderer typecheck passed in the same script)
 - Tests (C1 targeted): PASS — dataTransferValidation 13 + secretBoundary 11 (24 tests)
 - Tests (combined trust suite): PASS — terminalSecurity 17 + securityPolicy 29 + dataTransfer 13 + secretBoundary 11 (70 tests)
-- Tests (full suite): PASS — 415 tests across 26 files, including production-database coverage (the 91 API Discovery tests were added in this pass)
+- Tests (full suite): PASS — 423 tests across 26 files, including production-database coverage (the 91 API Discovery tests were added in this pass)
 - CI: PASS — GitHub Actions run `41855922082` (Windows, Node 20; 1m 13s)
 - Windows packaging: PASS (unsigned) — `Fluxora-Setup-1.0.0.exe` 104.9 MiB and `Fluxora-Portable-1.0.0.exe` 104.7 MiB; ProductName `Fluxora`, version `1.0.0`, icon matches `build/icon.ico`
 - Artifact verification: NSIS installer and portable executable exist; version/product metadata correct; sqlite3 native binary present in unpacked `node_modules/sqlite3/build/Release/`; no stale debug files packaged; artifact sizes recorded (104.9 MiB installer, 104.7 MiB portable); signing status explicit: `NotSigned`.
@@ -192,7 +192,7 @@ approval-first catalog with one live test path, no autonomy.
 | `tests/electron/apiDiscoveryDatabase.test.ts` | 7 | tables, indexes, no secret/body columns, audit ordering and pruning |
 | `tests/electron/apiIpc.test.ts` | 9 | channel set, unknown ids, injection attempts, secret validation, no secret leakage |
 
-**Gates** — both typechecks PASS, `npx vitest run` 422/424 PASS (27 files), `npm run build`
+**Gates** — both typechecks PASS, `npx vitest run` 423/423 PASS (26 files), `npm run build`
 PASS.
 
 **Known gaps**

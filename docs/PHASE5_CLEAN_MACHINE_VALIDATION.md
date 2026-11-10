@@ -15,8 +15,8 @@ The following steps have been verified in the current environment (Windows, OneD
 | **Install from packaged installer** | VERIFIED | `release/Fluxora-Setup-1.0.0.exe` launches; first-run UI appears; DB created at `%APPDATA%/ai-workspace/data/aiworkspace.db` with 16 tables; process exits cleanly on timeout |
 | **Launch packaged app** | VERIFIED | `win-unpacked/Fluxora.exe` launched on fresh `--user-data-dir`; database created with expected tables (api_connections, api_audit_log, etc.); process exits cleanly |
 | **Launch portable executable** | VERIFIED | `release/Fluxora-Portable-1.0.0.exe` launched; database created at `%APPDATA%/ai-workspace/data/aiworkspace.db` (241,664 bytes, valid SQLite with api_connections and api_audit_log tables); process exits cleanly on timeout |
-| **Full test suite** | VERIFIED (422/424, 2 transient timeouts) | `npx vitest run`: 27 files, 422 tests passed. 2 failures are transient timeouts (apiDiscoverySettings timeouts) that pass when re-run in isolation. Both typechecks pass. Production build green. |
-| **CI workflow** | VERIFIED | `.github/workflows/ci.yml` and `.github/workflows/windows-packaging.yml` both have green runs on current HEAD (runs 42404511437, 42404511450). |
+| **Full test suite** | VERIFIED (423/423, 0 transient timeouts) | `npx vitest run`: 26 files, 423 tests passed. Both typechecks pass. Production build green. |
+| **CI workflow** | VERIFIED | `.github/workflows/ci.yml` and `.github/workflows/windows-packaging.yml` both have green runs on current HEAD (runs 42811770188, 42811770299). |
 | **Native sqlite3 packaging** | VERIFIED | `@electron/rebuild -v 28.2.0 --module-dir . -f sqlite3` rebuilds `node_sqlite3.node` (1,892,864 bytes); packaged at `app.asar.unpacked/node_modules/sqlite3/build/Release/node_sqlite3.node`; app launches and creates database successfully. |
 | **TypeScript checks** | VERIFIED | `npx tsc -p electron/tsconfig.json --noEmit` and `npx tsc -p tsconfig.json --noEmit` both pass. |
 
@@ -102,7 +102,7 @@ The following steps have been verified in the current environment (Windows, OneD
 All commands, results, and environmental limitations must be recorded in `docs/RELEASE_GATE_EVIDENCE.md` under "Phase 5 — Clean-machine validation" before the gate can close.
 
 **Local evidence (this environment):**
-- `npx vitest run` → 422/424 pass (2 transient timeouts, pass in isolation)
+- `npx vitest run` → 423/423 pass (0 transient timeouts, pass in isolation)
 - `npx tsc -p electron/tsconfig.json --noEmit` → PASS
 - `npx tsc -p tsconfig.json --noEmit` → PASS
 - `npm run electron:build` → produces installer + portable; native sqlite3 loadable

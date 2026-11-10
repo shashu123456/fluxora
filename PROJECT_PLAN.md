@@ -57,7 +57,7 @@ Historical reports are archived in `docs/archive/` and are **not** current truth
 - Full suite: RED only because of `tests/electron/database.test.ts`.
 - Windows installer: NOT VERIFIED.
 - Git: one historical commit; no remote configured. Do not commit/push without explicit request.
-- Tests (current): 415 passing across 26 files.
+- Tests (current): 423 passing across 26 files.
 - API Discovery MVP (Phase 0 + Phase 1): **complete** — see §3b.
 
 ### Verified commands
@@ -84,7 +84,7 @@ live test path) are implemented; nothing beyond them was started.
   the existing vault).
 - Surface: seven `apis:*` IPC handlers, preload `window.api.apis`, Settings card with the
   Beta badge.
-- Gates: both typechecks PASS, `npx vitest run` 415/415 PASS, `npm run build` PASS.
+- Gates: both typechecks PASS, `npx vitest run` 423/423 PASS, `npm run build` PASS.
 - Docs: `docs/API_DISCOVERY.md`, `docs/API_DISCOVERY_SECURITY.md`,
   `docs/API_DISCOVERY_DEMO.md`, `CHANGELOG.md`.
 - Explicitly not built: autonomous discovery, crawling, MCP, OAuth, mutations, codegen,

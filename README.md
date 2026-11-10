@@ -12,7 +12,7 @@ Fluxora is an offline-capable Electron desktop app that brings multi-provider AI
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/shashu123456/fluxora/actions/workflows/ci.yml/badge.svg)](https://github.com/shashu123456/fluxora/actions/workflows/ci.yml)
 
-> **Status:** Feature-complete and technically validated for an unsigned release. Full test suite green (422 tests across 27 files), both typechecks green, production build green, Windows installer + portable built and verified: `Fluxora-Setup-1.0.0.exe` (99.1 MiB), `Fluxora-Portable-1.0.0.exe` (98.8 MiB), `win-unpacked/Fluxora.exe` (168.7 MiB); native sqlite3 rebuilt inside the build script and packaged unpacked; packaging reproducible via `npm ci` → `@electron/rebuild` → `electron-builder`; Windows packaging CI job added. CI configured and passing. Code signing is the remaining blocker (no certificate; documented, never faked). All artifacts `NotSigned`. Phase 4 status: PARTIAL — install/uninstall smoke in clean profile NOT VERIFIED (no clean machine), live keyed test NOT VERIFIED (no token), live-app visual smoke NOT VERIFIED (tools cannot reach native window).
+> **Status:** Feature-complete and technically validated for an unsigned release. Full test suite green (423 tests across 26 files), both typechecks green, production build green, Windows installer + portable built (launch verification: NOT VERIFIED): `Fluxora-Setup-1.0.0.exe` (99.1 MiB), `Fluxora-Portable-1.0.0.exe` (98.8 MiB), `win-unpacked/Fluxora.exe` (168.7 MiB); native sqlite3 rebuilt inside the build script and packaged unpacked; packaging reproducible via `npm ci` → `@electron/rebuild` → `electron-builder`; Windows packaging CI job added. CI configured and passing. Code signing is the remaining blocker (no certificate; documented, never faked). All artifacts `NotSigned`. Phase 4 status: PARTIAL — install/uninstall smoke in clean profile NOT VERIFIED (no clean machine), live keyed test NOT VERIFIED (no token), live-app visual smoke NOT VERIFIED (tools cannot reach native window).
 
 ---
 
@@ -88,7 +88,7 @@ globally; path-only audit rows.
 
 **Tradeoffs.** Twenty curated APIs instead of "everything"; a release is needed to add an
 API; no POST/OAuth/MCP; keyed flows are proven with injected secrets and transports rather
-than live third-party credentials.**Measured.** 422 tests green (71 new), 48 SSRF cases, 19/20 catalog endpoints returning JSON 200 during verification (Google Books returned 429 from a shared IP). Zero secrets found in audit rows, logs, or fixtures.
+than live third-party credentials.**Measured.** 423 tests green (71 new), 48 SSRF cases, 19/20 catalog endpoints returning JSON 200 during verification (Google Books returned 429 from a shared IP). Zero secrets found in audit rows, logs, or fixtures.
 
 **Deliberately not built.** Autonomous discovery, crawling/scraping, MCP, OAuth, code
 generation, plugins, marketplace/billing, POST/PUT/PATCH/DELETE, background health checks,
@@ -144,7 +144,7 @@ Full details: [Architecture](docs/ARCHITECTURE.md) · [IPC](docs/IPC_ARCHITECTUR
   - Implemented multi-provider AI with streaming SSE parsing for OpenAI-compatible, Anthropic, and Gemini endpoints, plus auto-routing, usage/cost tracking, and per-request abort.
   - Added local model support with automatic detection of Ollama and LM Studio and a generic OpenAI-compatible fallback, so the same chat surface works with cloud or offline runtimes.
   - Hardened the desktop trust boundary: canonical filesystem containment for workspace reads/writes, main-process terminal approval with command parsing and process-tree termination, and an integrity-checked secret vault with metadata-only export/import and verified restore.
-  - Delivered CI (typechecks + full test suite + build on every push), a verified Windows installer and portable build, and a 422-test suite covering security, terminal, data transfer, secrets, database, intelligence, and more.
+  - Delivered CI (typechecks + full test suite + build on every push), a verified Windows installer and portable build, and a 423-test suite covering security, terminal, data transfer, secrets, database, intelligence, and more.
 
 ---
 
@@ -362,7 +362,7 @@ The workflow file lives at `.github/workflows/ci.yml`. It is the canonical CI de
 |---|---|
 | Electron TypeScript | PASS |
 | Renderer TypeScript | PASS |
-| Full test suite | 422/424 passed across 27 files (including 91 API Discovery) |
+| Full test suite | 423/423 passed across 26 files (including 91 API Discovery) |
 | Windows packaging (unsigned) | PASS — installer 99.1 MiB, portable 98.8 MiB, ProductName `Fluxora`, version `1.0.0`, icon verified |
 | Packaged app launch | PASS — fresh profile creates database, 15+ tables, empty stderr |
 

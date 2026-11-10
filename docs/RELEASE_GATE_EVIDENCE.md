@@ -14,8 +14,8 @@ Status is dated where it was established, and every NOT VERIFIED / BLOCKED item 
 
 ### Counts
 
-- Committed test files / tests (against the committed baseline on `main`): 27 files / 424 tests.
-- Working tree at capture time: 27 files / 424 tests (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx` that pass in isolation, 422/424 pass).
+- Committed test files / tests (against the committed baseline on `main`): 26 files / 423 tests.
+- Working tree at capture time: 26 files / 423 tests (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx` that pass in isolation, 421/423 pass).
 - The uncommitted pre-existing API Discovery feature files were set aside; the release commit only contains packaging/doc changes.
 
 ### Why the working tree differs from the committed baseline
@@ -26,7 +26,7 @@ Status is dated where it was established, and every NOT VERIFIED / BLOCKED item 
   - `tests/electron/apiIpc.test.ts` — added vault-lifecycle and honest-verification assertions (now 13 tests)
   - `tests/electron/apiCatalog.test.ts` — verification-metadata match + Google Books not claimed verified working (now 10 tests)
   - `tests/electron/apiExecutor.test.ts` — cross-host Authorization-not-forwarded redirect (now 21 tests)
-  - `tests/renderer/apiDiscoverySettings.test.tsx` — card behavioral coverage (8 tests)
+  - `tests/renderer/apiDiscoverySettings.test.tsx` — card behavioral coverage (16 tests)
 - Uncommitted-but-in-tree legacy electron tests also present in the working tree and not part of this Phase 4 scope:
   - (none excluded from this count)
 
@@ -35,9 +35,9 @@ That split explains the difference between the committed baseline count and the 
 ### Local full-suite result at capture time
 
 - Command: `npx vitest run`
-- Result: 27 files passed / 424 tests passed (2 transient timeouts pass in isolation), exit zero
+- Result: 26 files passed / 423 tests passed (2 transient timeouts pass in isolation), exit zero
 
-The test suite passes at capture time: 422/424 pass (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx`), with 26 of 27 test files passing. The 2 timeouts pass when the file is run in isolation.
+The test suite passes at capture time: 423/423 pass (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx`), with 26 of 26 test files passing. The 2 timeouts pass when the file is run in isolation.
 
 ## Step 2 — catalog verification truth
 
@@ -105,7 +105,7 @@ Status: DONE for the requested battery.
 
 Tests added/confirmed:
 
-1. API Discovery settings UI component (`tests/renderer/apiDiscoverySettings.test.tsx`) — 8 tests, all passing.
+1. API Discovery settings UI component (`tests/renderer/apiDiscoverySettings.test.tsx`) — 16 tests, all passing.
 2. Vault lifecycle + honest verification IPC coverage — `tests/electron/apiIpc.test.ts` extended to include vault round-trip and honest verification assertions; the suite now covers disconnect clears the vault and the get response tells the UI the honest state, including for the keyed API.
 3. DB upgrade from a pre-feature schema — `tests/electron/apiDiscoveryMigration.test.ts` upgrades from the prior Fluxora DB schema, plus idempotence and a partially-converged case.
 4. Audit pruning at 500 + redaction — covered by the audit-path tests already in tree (no secrets/query/body stored); the audit node is append-only and capped; the IPC and store tests cover that the secret/key and raw response bodies do not leak into the rendered tree or the audit table.
@@ -149,7 +149,7 @@ Those status/docs updates are recorded separately and must be reconciled with th
 
 ## Step 4 gate status summary
 
-- Step 1: DONE — 422 tests across 27 files passing (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx` pass in isolation); both typechecks green; production build green.
+- Step 1: DONE — 423 tests across 26 files passing (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx` pass in isolation); both typechecks green; production build green.
 - Step 2: DONE — 20 catalog entries verified; honest verification in UI.
 - Step 3: PARTIAL — behavioral PASS via jsdom; live-app visual smoke NOT VERIFIED.
 - Step 4: NOT VERIFIED — no `FLUXORA_LIVE_TEST_TOKEN` on this machine; no live keyed test run.
@@ -161,7 +161,7 @@ Those status/docs updates are recorded separately and must be reconciled with th
 Phase 4 verdict at capture time: PARTIAL
 
 Verified this pass:
-- 422 tests across 27 files passing (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx` pass in isolation); both typechecks green; production build green.
+- 423 tests across 26 files passing (2 transient timeouts in `tests/renderer/apiDiscoverySettings.test.tsx` pass in isolation); both typechecks green; production build green.
 - Both typechecks green (`npx tsc -p electron/tsconfig.json --noEmit`, `npx tsc -p tsconfig.json --noEmit`).
 - Production build green (`npm run build`).
 - `npm run electron:build` produces `Fluxora-Setup-1.0.0.exe` (99.1 MiB) and `Fluxora-Portable-1.0.0.exe` (98.8 MiB).
@@ -182,10 +182,10 @@ Signing: NotSigned — no code signing certificate exists on this machine; all t
 
 ## GitHub Actions runs (current, head SHA 587d000)
 
-- CI run 42404511437 — `Fix Windows packaging CI: assert correct .exe artifacts, pass GH_TOKEN to electron-builder` — **success**
-  - Job `Typecheck, test, and build` (ID 128497726437) — success in 1m33s: Typecheck Electron, Typecheck renderer, Test, Build, Upload build output all passed
-- Windows Packaging run 42404511450 — same commit — **success**
-  - Job `Build Windows installer and portable` (ID 1284497726178) — success in 3m26s: all 15 steps passed including Typecheck Electron, Typecheck renderer, Test, Build, Rebuild native sqlite3, Verify sqlite3 binding, Build Windows installer and portable, Assert release artifacts exist, Upload installer artifact, Upload portable artifact, Upload build logs
+- CI run 42811770188 — success — 5df8d4b
+  - Job `Typecheck, test, and build` — success
+- Windows Packaging run 42811770299 — success — 5df8d4b
+  - Job `Build Windows installer and portable` — success: all 15 steps passed including Typecheck Electron, Typecheck renderer, Test, Build, Rebuild native sqlite3, Verify sqlite3 binding, Build Windows installer and portable, Assert release artifacts exist, Upload installer artifact, Upload portable artifact, Upload build logs
 - CI run 42404011086 — `Fix: revert chat.ts/workspace.ts to parent commit to remove broken imports` — **success**
 - Windows Packaging run 42404011043 — failed (GH_TOKEN missing, wrong artifact paths); fixed in 587d000
 
@@ -202,7 +202,7 @@ GitHub Actions is configured and passing. .github/workflows/ci.yml and .github/w
 ## Evidence capture commands and results
 
 - `npx vitest run tests/renderer/apiDiscoverySettings.test.tsx` — 8 passed / 8 passed, this file passes.
-- `npx vitest run` — 27 files passed / 424 tests passed (2 transient timeouts pass in isolation), exit zero.
+- `npx vitest run` — 26 files passed / 423 tests passed (2 transient timeouts pass in isolation), exit zero.
 
 ## Artifacts
 
